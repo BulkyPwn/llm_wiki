@@ -201,6 +201,14 @@ pub fn run() {
                     eprintln!("[tray] failed to update tray availability state: {err}");
                 }
             }
+
+            if std::env::var("LLM_WIKI_HEADLESS").map_or(false, |v| !v.is_empty()) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                    eprintln!("[headless] Window hidden (LLM_WIKI_HEADLESS is set)");
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
