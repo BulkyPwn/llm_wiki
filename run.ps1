@@ -20,3 +20,6 @@ taskkill /F /IM llm-wiki.exe
 # curl.exe -X POST http://127.0.0.1:19828/api/v1/window/show
 # # 隐藏窗口
 # curl.exe -X POST http://127.0.0.1:19828/api/v1/window/hide
+
+# 查看监听端口
+netstat -ano | Select-String "LISTENING" | Select-String "19827|19828|1420|5002|9010|9011|9012"
