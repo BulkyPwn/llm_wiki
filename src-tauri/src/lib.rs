@@ -6,6 +6,7 @@ mod proxy;
 mod types;
 
 use panic_guard::run_guarded;
+use tauri::Manager;
 
 #[tauri::command]
 fn clip_server_status() -> String {
@@ -87,6 +88,13 @@ pub fn run() {
     clip_server::start_clip_server();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
