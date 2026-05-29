@@ -83,6 +83,40 @@ fn mcp_server_entry_path(app: tauri::AppHandle) -> Result<String, String> {
     })
 }
 
+/// Show the main window when running in headless mode (LLM_WIKI_HEADLESS
+/// env var was set). Useful as a programmatic escape hatch so users can
+/// bring the GUI back without restarting the process.
+#[tauri::command]
+fn show_window(app: tauri::AppHandle) -> String {
+    use tauri::Manager;
+    run_guarded("show_window", || {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+            eprintln!("[headless] Window shown via command");
+        } else {
+            eprintln!("[headless] No main window found");
+        }
+        Ok("ok".to_string())
+    })
+    .unwrap_or_else(|e| format!("error: {e}"))
+}
+
+#[tauri::command]
+fn hide_window(app: tauri::AppHandle) -> String {
+    use tauri::Manager;
+    run_guarded("hide_window", || {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.hide();
+            eprintln!("[headless] Window hidden via command");
+        } else {
+            eprintln!("[headless] No main window found");
+        }
+        Ok("ok".to_string())
+    })
+    .unwrap_or_else(|e| format!("error: {e}"))
+}
+
 /// Apply a proxy configuration to the process env immediately, so the
 /// next outbound HTTP request picks it up without needing the user to
 /// restart the app. tauri-plugin-http builds a fresh
@@ -266,6 +300,8 @@ pub fn run() {
             commands::file_sync::ignore_file_change_task,
             set_proxy_env,
             set_close_behavior,
+            show_window,
+            hide_window,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

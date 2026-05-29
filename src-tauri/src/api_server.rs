@@ -232,6 +232,14 @@ fn handle_request(
             "allowLanAccess": api_allow_lan_access(app),
         }));
     }
+    // /api/v1/window/show only reveals the GUI window — no data
+    // exposure, safe to bypass both the enabled toggle and auth.
+    if path == format!("{API_PREFIX}/window/show") && method == &Method::Post {
+        return handle_window_show(app);
+    }
+    if path == format!("{API_PREFIX}/window/hide") && method == &Method::Post {
+        return handle_window_hide(app);
+    }
     if !path.starts_with(API_PREFIX) {
         return err(404, "Not found");
     }
@@ -553,6 +561,27 @@ struct ProjectEntry {
     name: String,
     path: String,
     current: bool,
+}
+
+fn handle_window_show(app: &AppHandle) -> ApiResponse {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        eprintln!("[API Server] Window shown via POST /api/v1/window/show");
+        ok(json!({ "ok": true, "message": "Window shown" }))
+    } else {
+        err(500, "No main window found")
+    }
+}
+
+fn handle_window_hide(app: &AppHandle) -> ApiResponse {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+        eprintln!("[API Server] Window hidden via POST /api/v1/window/hide");
+        ok(json!({ "ok": true, "message": "Window hidden" }))
+    } else {
+        err(500, "No main window found")
+    }
 }
 
 fn handle_projects(app: &AppHandle) -> ApiResponse {
