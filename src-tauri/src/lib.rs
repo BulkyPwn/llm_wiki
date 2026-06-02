@@ -146,6 +146,54 @@ pub fn run() {
                 eprintln!("[headless] Running headless (LLM_WIKI_HEADLESS is set), window stays hidden");
             }
 
+            {
+                use tauri::menu::{MenuBuilder, MenuItemBuilder};
+                use tauri::tray::TrayIconBuilder;
+
+                let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
+                let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+                let menu = MenuBuilder::new(app)
+                    .item(&show_item)
+                    .separator()
+                    .item(&quit_item)
+                    .build()?;
+
+                let tray = TrayIconBuilder::new()
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .tooltip("LLM Wiki")
+                    .menu(&menu)
+                    .on_menu_event(|app, event| {
+                        match event.id().as_ref() {
+                            "show" => {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                            "quit" => {
+                                app.exit(0);
+                            }
+                            _ => {}
+                        }
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let tauri::tray::TrayIconEvent::DoubleClick {
+                            button: tauri::tray::MouseButton::Left,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    })
+                    .build(app)?;
+                // Keep TrayIcon alive for the app's lifetime
+                Box::leak(Box::new(tray));
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -203,32 +251,9 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                #[cfg(target_os = "macos")]
-                {
-                    let _ = window.hide();
-                    api.prevent_close();
-                }
-
-                #[cfg(not(target_os = "macos"))]
-                {
-                    use tauri::Manager;
-                    api.prevent_close();
-                    let win = window.clone();
-                    let app = window.app_handle().clone();
-                    tauri::async_runtime::spawn(async move {
-                        use tauri_plugin_dialog::DialogExt;
-                        let confirmed = app
-                            .dialog()
-                            .message("Are you sure you want to quit LLM Wiki?")
-                            .title("Confirm Exit")
-                            .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
-                            .blocking_show();
-
-                        if confirmed {
-                            let _ = win.destroy();
-                        }
-                    });
-                }
+                // All platforms: close button hides to tray, quit via tray menu
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .build(tauri::generate_context!())
