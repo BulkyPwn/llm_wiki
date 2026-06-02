@@ -243,11 +243,13 @@ pub fn run() {
                 }
             }
 
-            if std::env::var("LLM_WIKI_HEADLESS").map_or(false, |v| !v.is_empty()) {
+            if std::env::var("LLM_WIKI_HEADLESS").map_or(true, |v| v.is_empty()) {
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.hide();
-                    eprintln!("[headless] Window hidden (LLM_WIKI_HEADLESS is set)");
+                    let _ = window.show();
+                    eprintln!("[headless] Window shown (normal mode)");
                 }
+            } else {
+                eprintln!("[headless] Running headless (LLM_WIKI_HEADLESS is set), window stays hidden");
             }
 
             Ok(())
