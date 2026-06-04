@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
+import { listen } from "@tauri-apps/api/event"
 import i18n from "@/i18n"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
@@ -14,6 +15,21 @@ import { WelcomeScreen } from "@/components/project/welcome-screen"
 import { CreateProjectDialog } from "@/components/project/create-project-dialog"
 import type { WikiProject } from "@/types/wiki"
 
+function flattenFiles(nodes: Array<{ name: string; path: string; is_dir: boolean; children?: Array<{ name: string; path: string; is_dir: boolean; children?: any[] }> }>): Array<{ name: string; path: string }> {
+  const result: Array<{ name: string; path: string }> = []
+  function walk(items: typeof nodes) {
+    for (const item of items) {
+      if (item.is_dir && item.children) {
+        walk(item.children)
+      } else {
+        result.push({ name: item.name, path: item.path })
+      }
+    }
+  }
+  walk(nodes)
+  return result
+}
+
 function App() {
   const project = useWikiStore((s) => s.project)
   const setProject = useWikiStore((s) => s.setProject)
@@ -27,6 +43,62 @@ function App() {
   useEffect(() => {
     setupAutoSave()
     startClipWatcher()
+  }, [])
+
+  // Listen for API-driven project activation (POST /api/v1/projects/activate).
+  // When the API server receives a project-activate request, it emits a Tauri
+  // event — this handler runs the full project-switch lifecycle on the frontend.
+  useEffect(() => {
+    const unlisten = listen<{ projectId: string; name: string; path: string }>(
+      "api://project-activate",
+      async (event) => {
+        const { path } = event.payload
+        console.log("[API] Project activation event received:", event.payload)
+        try {
+          const proj = await openProject(path)
+          await handleProjectOpened(proj)
+
+          // After project activation, explicitly scan raw/sources/ and
+          // enqueue any files that haven't been ingested yet. The file-
+          // snapshot-based rescan in startProjectFileWatcher only detects
+          // files whose hash has changed — files that existed before
+          // activation (placed while the project was inactive) match the
+          // snapshot and are skipped. This explicit scan uses the ingest
+          // cache and queue deduplication to avoid redundant work.
+          const { listDirectory } = await import("@/commands/fs")
+          const { isIngestableSourcePath, enqueueSourceIngest } = await import("@/lib/source-lifecycle")
+          const { normalizePath } = await import("@/lib/path-utils")
+          const { useWikiStore } = await import("@/stores/wiki-store")
+
+          const pp = normalizePath(proj.path)
+          const sourcesRoot = `${pp}/raw/sources`
+          let tree: Awaited<ReturnType<typeof listDirectory>>
+          try {
+            tree = await listDirectory(sourcesRoot)
+          } catch {
+            console.log("[API] No raw/sources/ directory, skipping ingest scan")
+            return
+          }
+
+          const files = flattenFiles(tree).map((f) => f.path)
+          const ingestable = files
+            .map((fp) => fp.startsWith(pp) ? fp.slice(pp.length + 1) : fp)
+            .filter(isIngestableSourcePath)
+            .map((rel) => `${pp}/${rel}`)
+
+          if (ingestable.length > 0) {
+            console.log(`[API] Enqueuing ${ingestable.length} raw/sources/ files for ingest`)
+            const llmConfig = useWikiStore.getState().llmConfig
+            await enqueueSourceIngest(proj, ingestable, llmConfig)
+          }
+        } catch (err) {
+          console.error("[API] Failed to activate project:", err)
+        }
+      },
+    )
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {})
+    }
   }, [])
 
   // Dev-only helper for visually testing the update-banner UX.
