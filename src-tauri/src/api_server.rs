@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 use walkdir::WalkDir;
 
@@ -284,6 +284,9 @@ fn handle_request(
         (&Method::Get, ["projects", project_id, "graph"]) => handle_graph(app, project_id, query),
         (&Method::Post, ["projects", project_id, "sources", "rescan"]) => {
             handle_rescan(app, project_id)
+        }
+        (&Method::Post, ["projects", "activate"]) => {
+            handle_project_activate(app, body)
         }
         (&Method::Post, ["projects", project_id, "chat"]) => {
             let _ = project_id;
@@ -1848,6 +1851,46 @@ fn handle_rescan(app: &AppHandle, project_id: &str) -> ApiResponse {
         Ok(result) => ok(json!({ "ok": true, "projectId": project.id, "result": result })),
         Err(e) => err(500, e),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivateProjectRequest {
+    project_id: String,
+}
+
+fn handle_project_activate(app: &AppHandle, body: &str) -> ApiResponse {
+    let req: ActivateProjectRequest = match serde_json::from_str(body) {
+        Ok(req) => req,
+        Err(e) => return err(400, format!("Invalid JSON: {e}")),
+    };
+
+    let project = match resolve_project(app, &req.project_id) {
+        Ok(project) => project,
+        Err(e) => return err(404, e),
+    };
+
+    // Emit event to WebView to trigger the project switch.
+    // The frontend listens for this event and calls handleProjectOpened,
+    // which runs the full project-switch lifecycle:
+    // resetProjectState → setProject → restoreQueue → startProjectFileSync.
+    let payload = json!({
+        "projectId": project.id,
+        "name": project.name,
+        "path": project.path,
+    });
+    let _ = app.emit("api://project-activate", &payload);
+
+    eprintln!(
+        "[API Server] Project activation requested: {} ({})",
+        project.id, project.path
+    );
+
+    ok(json!({
+        "ok": true,
+        "message": "Project activation requested",
+        "project": project,
+    }))
 }
 
 fn load_source_watch_config(
