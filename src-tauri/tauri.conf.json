@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LLM Wiki",
+  "productName": "LLM_Wiki",
   "version": "0.5.4",
   "identifier": "com.llmwiki.app",
   "build": {
