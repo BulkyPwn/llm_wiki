@@ -101,6 +101,76 @@ function App() {
     }
   }, [])
 
+  // Listen for API-driven config reload (POST /api/v1/config/reload).
+  // When the API server receives a config-reload request, it emits this
+  // event — the frontend re-reads llmConfig (and other config sections)
+  // from the on-disk app-state.json, so hand-edited changes take effect
+  // without restarting the app.
+  useEffect(() => {
+    const unlisten = listen("api://config-reload", async () => {
+      console.log("[API] Config reload event received")
+      try {
+        const {
+          loadLlmConfig,
+          loadProviderConfigs,
+          loadActivePresetId,
+          loadSearchApiConfig,
+          loadEmbeddingConfig,
+          loadMultimodalConfig,
+          loadProxyConfig,
+          loadApiConfig,
+        } = await import("@/lib/project-store")
+        const { useWikiStore } = await import("@/stores/wiki-store")
+
+        const savedConfig = await loadLlmConfig()
+        if (savedConfig) {
+          useWikiStore.getState().setLlmConfig(savedConfig)
+        }
+        const savedProviderConfigs = await loadProviderConfigs()
+        if (savedProviderConfigs) {
+          useWikiStore.getState().setProviderConfigs(savedProviderConfigs)
+        }
+        const savedActivePreset = await loadActivePresetId()
+        if (savedActivePreset) {
+          useWikiStore.getState().setActivePresetId(savedActivePreset)
+        }
+        const savedSearchConfig = await loadSearchApiConfig()
+        if (savedSearchConfig) {
+          useWikiStore.getState().setSearchApiConfig(savedSearchConfig)
+        }
+        const savedEmbeddingConfig = await loadEmbeddingConfig()
+        if (savedEmbeddingConfig) {
+          useWikiStore.getState().setEmbeddingConfig(savedEmbeddingConfig)
+        }
+        const savedMultimodalConfig = await loadMultimodalConfig()
+        if (savedMultimodalConfig) {
+          useWikiStore.getState().setMultimodalConfig(savedMultimodalConfig)
+        }
+        const savedProxy = await loadProxyConfig()
+        if (savedProxy) {
+          useWikiStore.getState().setProxyConfig(savedProxy)
+        }
+        const savedApi = await loadApiConfig()
+        if (savedApi) {
+          useWikiStore.getState().setApiConfig({
+            enabled: typeof savedApi.enabled === "boolean" ? savedApi.enabled : true,
+            allowUnauthenticated:
+              typeof savedApi.allowUnauthenticated === "boolean"
+                ? savedApi.allowUnauthenticated
+                : false,
+            token: savedApi.token ?? "",
+          })
+        }
+        console.log("[API] Config reload complete")
+      } catch (err) {
+        console.error("[API] Config reload failed:", err)
+      }
+    })
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {})
+    }
+  }, [])
+
   // Dev-only helper for visually testing the update-banner UX.
   // Open dev tools and run:
   //   __llmwiki_testUpdateBanner()

@@ -274,6 +274,7 @@ fn handle_request(
             let _ = project_id;
             err(501, "Chat API is not implemented in the local Rust API server yet. The existing chat/RAG pipeline currently lives in the WebView; expose it after moving the shared chat pipeline behind a backend command.")
         }
+        (&Method::Post, ["config", "reload"]) => handle_config_reload(app),
         _ => err(404, "Not found"),
     }
 }
@@ -1240,6 +1241,23 @@ fn handle_project_activate(app: &AppHandle, body: &str) -> ApiResponse {
         "ok": true,
         "message": "Project activation requested",
         "project": project,
+    }))
+}
+
+fn handle_config_reload(app: &AppHandle) -> ApiResponse {
+    invalidate_config_cache();
+
+    // Emit event to WebView so the frontend re-reads llmConfig (and
+    // other config sections) from the on-disk store. Useful when an
+    // external tool or a human edits app-state.json and wants the
+    // change to take effect without restarting the app.
+    let _ = app.emit("api://config-reload", ());
+
+    eprintln!("[API Server] Config reload requested — cache invalidated, frontend notified");
+
+    ok(json!({
+        "ok": true,
+        "message": "Config reload triggered — frontend will re-read app-state.json"
     }))
 }
 
