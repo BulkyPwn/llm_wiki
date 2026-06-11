@@ -619,7 +619,7 @@ async function autoIngestImpl(
       },
     },
     signal,
-    { temperature: 0.1, reasoning: { mode: "off" }, max_tokens: 8192 },
+    { temperature: 0.1, reasoning: { mode: "off" }, max_tokens: 20480 },
   )
 
   const generationActivity = useActivityStore.getState().items.find((i) => i.id === activityId)
