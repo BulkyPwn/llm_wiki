@@ -815,12 +815,6 @@ fn extract_pptx_markdown(archive: &mut zip::ZipArchive<fs::File>) -> Result<Stri
     }
 }
 
-/// Extract XLSX/XLS/ODS to Markdown tables using calamine.
-fn extract_xlsx_markdown(_archive: &mut zip::ZipArchive<fs::File>) -> Result<String, String> {
-    // calamine needs the file path, not the archive
-    Err("Use extract_spreadsheet instead".to_string())
-}
-
 /// Extract spreadsheet to Markdown using calamine (supports xlsx, xls, ods).
 fn extract_spreadsheet(path: &str) -> Result<String, String> {
     let mut workbook = open_workbook_auto(path)
