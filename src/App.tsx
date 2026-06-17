@@ -111,6 +111,7 @@ function App() {
       console.log("[API] Config reload event received")
       try {
         const {
+          reloadStore,
           loadLlmConfig,
           loadProviderConfigs,
           loadActivePresetId,
@@ -120,6 +121,13 @@ function App() {
           loadProxyConfig,
           loadApiConfig,
         } = await import("@/lib/project-store")
+
+        // Reload the in-memory store from disk before reading any
+        // config keys.  Without this, the store still holds the
+        // values it loaded at app start, and externally-written
+        // changes (e.g. from the Python wiki-server) are invisible.
+        await reloadStore()
+
         const { useWikiStore } = await import("@/stores/wiki-store")
 
         const savedConfig = await loadLlmConfig()
