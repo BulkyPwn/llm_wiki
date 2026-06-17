@@ -45,6 +45,17 @@ const LLM_CONFIG_KEY = "llmConfig"
 const PROVIDER_CONFIGS_KEY = "providerConfigs"
 const ACTIVE_PRESET_KEY = "activePresetId"
 
+/**
+ * Force the in-memory Tauri store to discard its cached content and
+ * re-read the on-disk app-state.json.  Call this before reading
+ * config keys that may have been updated externally (e.g. by the
+ * Python wiki-server writing llmConfig / embeddingConfig / etc.).
+ */
+export async function reloadStore(): Promise<void> {
+  const store = await getStore()
+  await store.reload()
+}
+
 export async function saveLlmConfig(config: LlmConfig): Promise<void> {
   const store = await getStore()
   await store.set(LLM_CONFIG_KEY, config)
