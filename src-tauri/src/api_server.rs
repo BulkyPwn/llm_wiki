@@ -274,6 +274,9 @@ fn handle_request(
             let _ = project_id;
             err(501, "Chat API is not implemented in the local Rust API server yet. The existing chat/RAG pipeline currently lives in the WebView; expose it after moving the shared chat pipeline behind a backend command.")
         }
+        (&Method::Post, ["projects", project_id, "ingest", "cancel-all"]) => {
+            handle_ingest_cancel_all(app, project_id)
+        }
         (&Method::Post, ["config", "reload"]) => handle_config_reload(app),
         _ => err(404, "Not found"),
     }
@@ -1202,6 +1205,21 @@ fn handle_rescan(app: &AppHandle, project_id: &str) -> ApiResponse {
         Ok(result) => ok(json!({ "ok": true, "projectId": project.id, "result": result })),
         Err(e) => err(500, e),
     }
+}
+
+fn handle_ingest_cancel_all(app: &AppHandle, project_id: &str) -> ApiResponse {
+    let payload = json!({ "projectId": project_id });
+    let _ = app.emit("api://ingest-cancel-all", &payload);
+
+    eprintln!(
+        "[API Server] Ingest cancel-all requested for project: {project_id}"
+    );
+
+    ok(json!({
+        "ok": true,
+        "message": "Ingest cancel-all requested",
+        "projectId": project_id,
+    }))
 }
 
 #[derive(Deserialize)]

@@ -179,6 +179,27 @@ function App() {
     }
   }, [])
 
+  // Listen for API-driven ingest cancel-all (POST /api/v1/projects/:id/ingest/cancel-all).
+  useEffect(() => {
+    const unlisten = listen<{ projectId: string }>(
+      "api://ingest-cancel-all",
+      async (event) => {
+        const { projectId } = event.payload
+        console.log("[API] Ingest cancel-all event received:", event.payload)
+        try {
+          const { cancelAllTasks } = await import("@/lib/ingest-queue")
+          const removed = await cancelAllTasks()
+          console.log(`[API] Cancelled ${removed} ingest task(s) for project ${projectId}`)
+        } catch (err) {
+          console.error("[API] Ingest cancel-all failed:", err)
+        }
+      },
+    )
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {})
+    }
+  }, [])
+
   // Dev-only helper for visually testing the update-banner UX.
   // Open dev tools and run:
   //   __llmwiki_testUpdateBanner()
