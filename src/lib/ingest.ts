@@ -1,3 +1,4 @@
+import pLimit from "p-limit"
 import { deleteFile, fileExists, readFile, writeFile, listDirectory } from "@/commands/fs"
 import { streamChat } from "@/lib/llm-client"
 import type { LlmConfig } from "@/stores/wiki-store"
@@ -733,17 +734,27 @@ async function autoIngestImpl(
   if (embCfg.enabled && embCfg.model && writtenPaths.length > 0) {
     try {
       const { embedPage } = await import("@/lib/embedding")
-      for (const wpath of writtenPaths) {
+      const embPaths = writtenPaths.filter((wpath) => {
         const pageId = wpath.split("/").pop()?.replace(/\.md$/, "") ?? ""
-        if (!pageId || ["index", "log", "overview"].includes(pageId)) continue
-        try {
-          const content = await readFile(`${pp}/${wpath}`)
-          const titleMatch = content.match(/^---\n[\s\S]*?^title:\s*["']?(.+?)["']?\s*$/m)
-          const title = titleMatch ? titleMatch[1].trim() : pageId
-          await embedPage(pp, pageId, title, content, embCfg)
-        } catch {
-          // non-critical
-        }
+        return pageId && !["index", "log", "overview"].includes(pageId)
+      })
+      if (embPaths.length > 0) {
+        const embLimit = pLimit(useWikiStore.getState().ingestConcurrency || 5)
+        await Promise.all(
+          embPaths.map((wpath) =>
+            embLimit(async () => {
+              try {
+                const pageId = wpath.split("/").pop()?.replace(/\.md$/, "") ?? ""
+                const content = await readFile(`${pp}/${wpath}`)
+                const titleMatch = content.match(/^---\n[\s\S]*?^title:\s*["']?(.+?)["']?\s*$/m)
+                const title = titleMatch ? titleMatch[1].trim() : pageId
+                await embedPage(pp, pageId, title, content, embCfg)
+              } catch {
+                // non-critical
+              }
+            }),
+          ),
+        )
       }
     } catch {
       // embedding module not available
@@ -943,7 +954,6 @@ async function writeFileBlocks(
 ): Promise<{ writtenPaths: string[]; warnings: string[]; hardFailures: string[] }> {
   const { blocks, warnings: parseWarnings } = parseFileBlocks(text)
   const warnings = [...parseWarnings]
-  const writtenPaths: string[] = []
   // "Hard failures" = blocks we INTENDED to write but the FS rejected
   // (disk full, permission, OS-level errors). Distinct from soft drops
   // (language mismatch, parse warnings, path-traversal rejections):
@@ -955,6 +965,15 @@ async function writeFileBlocks(
   const hardFailures: string[] = []
 
   const targetLang = useWikiStore.getState().outputLanguage
+
+  // ── First pass: synchronous validation + content sanitization ──
+  // Filters out blocks that fail path-traversal / language guards
+  // before any async work. Only the write phase is concurrent.
+  interface PreparedBlock {
+    relativePath: string
+    content: string
+  }
+  const preparedBlocks: PreparedBlock[] = []
 
   for (const { path: rawRelativePath, content: rawContent } of blocks) {
     let relativePath = rawRelativePath
@@ -1002,56 +1021,89 @@ async function writeFileBlocks(
       continue
     }
 
-    const fullPath = `${projectPath}/${relativePath}`
-    try {
-      if (isLogPath(relativePath)) {
-        const existing = await tryReadFile(fullPath)
-        const appended = existing ? `${existing}\n\n${content.trim()}` : content.trim()
-        await writeFile(fullPath, appended)
-      } else if (
-        isListingPath(relativePath)
-      ) {
-        // Listing pages (index / overview) are always overwritten
-        // wholesale — their sources field is incidental and merging
-        // wouldn't make semantic sense (they aren't source-derived
-        // content pages).
-        await writeFile(fullPath, content)
-      } else {
-        // Content pages (entities / concepts / queries / synthesis /
-        // comparisons / sources summaries): if a page with this
-        // path already exists on disk, merge old + new instead of
-        // clobbering. The merge has three layers:
-        //   1. Frontmatter array fields (sources, tags, related)
-        //      are union-merged at the application layer.
-        //   2. If body content differs, an LLM call produces a
-        //      coherent merged body — preserves contributions from
-        //      every source document.
-        //   3. Locked frontmatter fields (type, title, created)
-        //      are forced back to the existing values; updated is
-        //      stamped today.
-        // LLM failure / sanity rejection falls back to "incoming
-        // body + array-field union" with a best-effort backup.
-        // See page-merge.ts.
-        const existing = await tryReadFile(fullPath)
-        const toWrite = await mergePageContent(
-          content,
-          existing || null,
-          buildPageMerger(llmConfig),
-          {
-            sourceFileName,
-            pagePath: relativePath,
-            signal,
-            backup: (oldContent) => backupExistingPage(projectPath, relativePath, oldContent),
-          },
-        )
-        await writeFile(fullPath, toWrite)
-      }
-      writtenPaths.push(relativePath)
-    } catch (err) {
-      const msg = `Failed to write "${relativePath}": ${err instanceof Error ? err.message : String(err)}`
-      console.error(`[ingest] ${msg}`)
-      warnings.push(msg)
-      hardFailures.push(relativePath)
+    preparedBlocks.push({ relativePath, content })
+  }
+
+  // Second pass: concurrent writes
+   // Each page has a unique path within a single ingest, so writes
+   // are independent. Listing pages (index/overview) are overwritten;
+   // content pages go through mergePageContent (which may trigger an
+   // LLM call). Concurrency reads from ingestConcurrency in wiki-store
+   // (default 5) so the user can tune based on LLM API capacity.
+  const writeLimit = pLimit(useWikiStore.getState().ingestConcurrency || 5)
+
+  interface BlockResult {
+    relativePath: string
+    ok: boolean
+    error?: string
+  }
+
+  const results = await Promise.all(
+    preparedBlocks.map((b) =>
+      writeLimit(async (): Promise<BlockResult> => {
+        const fullPath = `${projectPath}/${b.relativePath}`
+        try {
+          if (isLogPath(b.relativePath)) {
+            const existing = await tryReadFile(fullPath)
+            const appended = existing ? `${existing}\n\n${b.content.trim()}` : b.content.trim()
+            await writeFile(fullPath, appended)
+          } else if (isListingPath(b.relativePath)) {
+            // Listing pages (index / overview) are always overwritten
+            // wholesale — their sources field is incidental and merging
+            // wouldn't make semantic sense (they aren't source-derived
+            // content pages).
+            await writeFile(fullPath, b.content)
+          } else {
+            // Content pages (entities / concepts / queries / synthesis /
+            // comparisons / sources summaries): if a page with this
+            // path already exists on disk, merge old + new instead of
+            // clobbering. The merge has three layers:
+            //   1. Frontmatter array fields (sources, tags, related)
+            //      are union-merged at the application layer.
+            //   2. If body content differs, an LLM call produces a
+            //      coherent merged body — preserves contributions from
+            //      every source document.
+            //   3. Locked frontmatter fields (type, title, created)
+            //      are forced back to the existing values; updated is
+            //      stamped today.
+            // LLM failure / sanity rejection falls back to "incoming
+            // body + array-field union" with a best-effort backup.
+            // See page-merge.ts.
+            const existing = await tryReadFile(fullPath)
+            const toWrite = await mergePageContent(
+              b.content,
+              existing || null,
+              buildPageMerger(llmConfig),
+              {
+                sourceFileName,
+                pagePath: b.relativePath,
+                signal,
+                backup: (oldContent) => backupExistingPage(projectPath, b.relativePath, oldContent),
+              },
+            )
+            await writeFile(fullPath, toWrite)
+          }
+          return { relativePath: b.relativePath, ok: true }
+        } catch (err) {
+          return {
+            relativePath: b.relativePath,
+            ok: false,
+            error: `Failed to write "${b.relativePath}": ${err instanceof Error ? err.message : String(err)}`,
+          }
+        }
+      }),
+    ),
+  )
+
+  // ── Collect results ──
+  const writtenPaths: string[] = []
+  for (const r of results) {
+    if (r.ok) {
+      writtenPaths.push(r.relativePath)
+    } else {
+      console.error(`[ingest] ${r.error}`)
+      warnings.push(r.error!)
+      hardFailures.push(r.relativePath)
     }
   }
 

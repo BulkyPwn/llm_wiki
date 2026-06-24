@@ -45,6 +45,9 @@ export interface SettingsDraft {
   multimodalApiMode: CustomApiMode | undefined
   multimodalConcurrency: number
 
+  // Ingest concurrency
+  ingestConcurrency: number
+
   // Output preferences
   outputLanguage: string
   maxHistoryMessages: number

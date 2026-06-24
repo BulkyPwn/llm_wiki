@@ -89,6 +89,7 @@ function initialDraft(
   apiConfig: ReturnType<typeof useWikiStore.getState>["apiConfig"],
   maxHistoryMessages: number,
   uiLanguage: string,
+  ingestConcurrency: number,
   projectPath?: string,
 ): SettingsDraft {
   // Show absolute path: if stored path is empty, show default using project path
@@ -131,6 +132,7 @@ function initialDraft(
     multimodalAzureModelFamily: multimodal.azureModelFamily ?? "auto",
     multimodalApiMode: multimodal.apiMode,
     multimodalConcurrency: multimodal.concurrency,
+    ingestConcurrency,
     outputLanguage,
     maxHistoryMessages,
     proxyEnabled: proxy.enabled,
@@ -166,6 +168,8 @@ export function SettingsView() {
   const setSourceWatchConfig = useWikiStore((s) => s.setSourceWatchConfig)
   const apiConfig = useWikiStore((s) => s.apiConfig)
   const setApiConfig = useWikiStore((s) => s.setApiConfig)
+  const ingestConcurrency = useWikiStore((s) => s.ingestConcurrency)
+  const setIngestConcurrency = useWikiStore((s) => s.setIngestConcurrency)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
   const setMaxHistoryMessages = useChatStore((s) => s.setMaxHistoryMessages)
   // Drives the red dot next to the "About" row in the settings
@@ -192,6 +196,7 @@ export function SettingsView() {
       apiConfig,
       maxHistoryMessages,
       i18n.language,
+      ingestConcurrency,
       project?.path,
     ),
   )
@@ -235,6 +240,7 @@ export function SettingsView() {
         apiConfig,
         maxHistoryMessages,
         prev.uiLanguage,
+        ingestConcurrency,
         project?.path,
       ),
     )
@@ -248,6 +254,7 @@ export function SettingsView() {
     sourceWatchConfig,
     apiConfig,
     maxHistoryMessages,
+    ingestConcurrency,
     project,
   ])
 
@@ -320,6 +327,7 @@ export function SettingsView() {
     await saveEmbeddingConfig(newEmbed)
     setMultimodalConfig(newMultimodal)
     await saveMultimodalConfig(newMultimodal)
+    setIngestConcurrency(Math.max(1, Math.min(100, draft.ingestConcurrency || 5)))
     setOutputLanguage(draft.outputLanguage as typeof outputLanguage)
     await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage, project?.id)
     setProxyConfig(newProxy)

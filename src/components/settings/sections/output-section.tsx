@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import type { SettingsDraft, DraftSetter } from "../settings-types"
 import { OUTPUT_LANGUAGE_OPTIONS as LANGUAGE_OPTIONS } from "@/lib/output-language-options"
 
@@ -68,6 +69,27 @@ export function OutputSection({ draft, setDraft }: Props) {
             count: draft.maxHistoryMessages,
             turns: draft.maxHistoryMessages / 2,
           })}
+        </p>
+      </div>
+
+      <div className="space-y-2 rounded-md border p-3">
+        <Label>{t("settings.sections.output.ingestConcurrency", "Ingest concurrency")}</Label>
+        <Input
+          type="number"
+          min={1}
+          max={100}
+          step={1}
+          value={draft.ingestConcurrency}
+          onChange={(e) => {
+            const n = Number(e.target.value)
+            setDraft("ingestConcurrency", Number.isFinite(n) ? n : 5)
+          }}
+        />
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "settings.sections.output.ingestConcurrencyHint",
+            "Max parallel LLM requests during ingest (page merge + embedding). Higher values speed up ingest on high-throughput endpoints. 1 = sequential.",
+          )}
         </p>
       </div>
     </div>

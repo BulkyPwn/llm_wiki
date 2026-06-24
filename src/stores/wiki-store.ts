@@ -272,6 +272,9 @@ interface WikiState {
   searchApiConfig: SearchApiConfig
   embeddingConfig: EmbeddingConfig
   multimodalConfig: MultimodalConfig
+  /** Max concurrent LLM requests during ingest (page writes/merges,
+   *  embedding). Caps the internal p-limit pool. Default 5. */
+  ingestConcurrency: number
   outputLanguage: OutputLanguage
   proxyConfig: ProxyConfig
   scheduledImportConfig: ScheduledImportConfig
@@ -292,6 +295,7 @@ interface WikiState {
   setSearchApiConfig: (config: SearchApiConfig) => void
   setEmbeddingConfig: (config: EmbeddingConfig) => void
   setMultimodalConfig: (config: MultimodalConfig) => void
+  setIngestConcurrency: (concurrency: number) => void
   setOutputLanguage: (lang: OutputLanguage) => void
   setProxyConfig: (config: ProxyConfig) => void
   setScheduledImportConfig: (config: ScheduledImportConfig) => void
@@ -364,6 +368,8 @@ export const useWikiStore = create<WikiState>((set) => ({
     concurrency: 4,
   },
 
+  ingestConcurrency: 5,
+
   outputLanguage: "auto",
 
   proxyConfig: {
@@ -398,6 +404,7 @@ export const useWikiStore = create<WikiState>((set) => ({
   setSearchApiConfig: (searchApiConfig) => set({ searchApiConfig }),
   setEmbeddingConfig: (embeddingConfig) => set({ embeddingConfig }),
   setMultimodalConfig: (multimodalConfig) => set({ multimodalConfig }),
+  setIngestConcurrency: (ingestConcurrency) => set({ ingestConcurrency }),
   setOutputLanguage: (outputLanguage) => set({ outputLanguage }),
   setProxyConfig: (proxyConfig) => set({ proxyConfig }),
   setScheduledImportConfig: (scheduledImportConfig) => set({ scheduledImportConfig }),
