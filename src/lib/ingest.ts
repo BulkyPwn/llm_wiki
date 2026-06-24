@@ -15,7 +15,7 @@ import { parseSources, writeSources } from "@/lib/sources-merge"
 import { checkIngestCache, saveIngestCache } from "@/lib/ingest-cache"
 import { sanitizeIngestedFileContent } from "@/lib/ingest-sanitize"
 import { mergePageContent, type MergeFn } from "@/lib/page-merge"
-import { withProjectLock } from "@/lib/project-mutex"
+import { withPageLock } from "@/lib/page-mutex"
 import type { FileNode } from "@/types/wiki"
 import {
   extractAndSaveSourceImages,
@@ -286,13 +286,17 @@ export function languageRule(sourceContent: string = ""): string {
  * Auto-ingest: reads source → LLM analyzes → LLM writes wiki pages, all in one go.
  * Used when importing new files.
  *
- * Concurrency: this function holds a per-project lock for its full
- * duration. Two simultaneous calls for the same project (e.g. queue
- * + Save-to-Wiki) take turns. The lock is necessary because the
- * analysis stage reads `wiki/index.md` and the generation stage
- * overwrites it; without serialization, each call would emit an
- * "updated" index based on the same pre-state and overwrite each
- * other's additions.
+ * Concurrency: Step 1 (analysis) and Step 2 (generation) can run in
+ * parallel across documents. The write phase uses per-page locks so
+ * concurrent ingests producing the same page serialize at the page
+ * level rather than blocking the entire ingest pipeline.
+ *
+ * Known limitation: listing pages (index.md, overview.md) are
+ * overwritten wholesale by each ingest's Step 2 output. Two
+ * concurrent ingests will both read the pre-ingest index, each
+ * produce a complete version, and the later write wins — pages from
+ * the earlier writer can be silently dropped. Mitigation: after batch
+ * imports, review index.md.
  */
 export async function autoIngest(
   projectPath: string,
@@ -301,9 +305,7 @@ export async function autoIngest(
   signal?: AbortSignal,
   folderContext?: string,
 ): Promise<string[]> {
-  return withProjectLock(normalizePath(projectPath), () =>
-    autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext),
-  )
+  return autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext)
 }
 
 async function autoIngestImpl(
@@ -1043,46 +1045,61 @@ async function writeFileBlocks(
       writeLimit(async (): Promise<BlockResult> => {
         const fullPath = `${projectPath}/${b.relativePath}`
         try {
-          if (isLogPath(b.relativePath)) {
-            const existing = await tryReadFile(fullPath)
-            const appended = existing ? `${existing}\n\n${b.content.trim()}` : b.content.trim()
-            await writeFile(fullPath, appended)
-          } else if (isListingPath(b.relativePath)) {
-            // Listing pages (index / overview) are always overwritten
-            // wholesale — their sources field is incidental and merging
-            // wouldn't make semantic sense (they aren't source-derived
-            // content pages).
-            await writeFile(fullPath, b.content)
-          } else {
-            // Content pages (entities / concepts / queries / synthesis /
-            // comparisons / sources summaries): if a page with this
-            // path already exists on disk, merge old + new instead of
-            // clobbering. The merge has three layers:
-            //   1. Frontmatter array fields (sources, tags, related)
-            //      are union-merged at the application layer.
-            //   2. If body content differs, an LLM call produces a
-            //      coherent merged body — preserves contributions from
-            //      every source document.
-            //   3. Locked frontmatter fields (type, title, created)
-            //      are forced back to the existing values; updated is
-            //      stamped today.
-            // LLM failure / sanity rejection falls back to "incoming
-            // body + array-field union" with a best-effort backup.
-            // See page-merge.ts.
-            const existing = await tryReadFile(fullPath)
-            const toWrite = await mergePageContent(
-              b.content,
-              existing || null,
-              buildPageMerger(llmConfig),
-              {
-                sourceFileName,
-                pagePath: b.relativePath,
-                signal,
-                backup: (oldContent) => backupExistingPage(projectPath, b.relativePath, oldContent),
-              },
-            )
-            await writeFile(fullPath, toWrite)
-          }
+          // Per-page lock: when two concurrent ingests produce the
+          // same page, serialize the read→merge→write so the second
+          // ingest sees the first's output. Without this, two ingests
+          // would both read the pre-ingest version, merge against it
+          // independently, and the later write would silently drop the
+          // earlier's contribution.
+          await withPageLock(fullPath, async () => {
+            if (isLogPath(b.relativePath)) {
+              const existing = await tryReadFile(fullPath)
+              const appended = existing ? `${existing}\n\n${b.content.trim()}` : b.content.trim()
+              await writeFile(fullPath, appended)
+            } else if (isListingPath(b.relativePath)) {
+              // Listing pages (index / overview) are always overwritten
+              // wholesale — their sources field is incidental and merging
+              // wouldn't make semantic sense (they aren't source-derived
+              // content pages).
+              //
+              // Note: concurrent ingests both read the pre-ingest index
+              // during Step 1 and each produces a complete replacement.
+              // The page lock ensures they don't physically race the
+              // write(2) call, but the semantic race (second ingest
+              // overwriting the first's additions) remains — see the
+              // Known limitation note on autoIngest().
+              await writeFile(fullPath, b.content)
+            } else {
+              // Content pages (entities / concepts / queries / synthesis /
+              // comparisons / sources summaries): if a page with this
+              // path already exists on disk, merge old + new instead of
+              // clobbering. The merge has three layers:
+              //   1. Frontmatter array fields (sources, tags, related)
+              //      are union-merged at the application layer.
+              //   2. If body content differs, an LLM call produces a
+              //      coherent merged body — preserves contributions from
+              //      every source document.
+              //   3. Locked frontmatter fields (type, title, created)
+              //      are forced back to the existing values; updated is
+              //      stamped today.
+              // LLM failure / sanity rejection falls back to "incoming
+              // body + array-field union" with a best-effort backup.
+              // See page-merge.ts.
+              const existing = await tryReadFile(fullPath)
+              const toWrite = await mergePageContent(
+                b.content,
+                existing || null,
+                buildPageMerger(llmConfig),
+                {
+                  sourceFileName,
+                  pagePath: b.relativePath,
+                  signal,
+                  backup: (oldContent) => backupExistingPage(projectPath, b.relativePath, oldContent),
+                },
+              )
+              await writeFile(fullPath, toWrite)
+            }
+          })
           return { relativePath: b.relativePath, ok: true }
         } catch (err) {
           return {

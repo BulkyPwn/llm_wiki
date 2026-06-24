@@ -243,13 +243,14 @@ describe("ingest-queue — retry & failure", () => {
     mockWriteFile.mockClear()
 
     const requeued = await retryAllFailedTasks()
-    await flushMicrotasks(2)
+    await flushMicrotasks(5)
 
     expect(requeued).toBe(2)
-    expect(mockAutoIngest).toHaveBeenCalledOnce()
+    // With concurrent processing, both tasks start simultaneously
+    expect(mockAutoIngest).toHaveBeenCalledTimes(2)
     expect(getQueue().map((task) => task.error)).toEqual([null, null])
     expect(getQueue().map((task) => task.retryCount)).toEqual([0, 0])
-    expect(getQueue().map((task) => task.status)).toEqual(["processing", "pending"])
+    expect(getQueue().map((task) => task.status)).toEqual(["processing", "processing"])
     expect(mockWriteFile).toHaveBeenCalled()
   })
 
@@ -352,7 +353,7 @@ describe("ingest-queue — queue-drain triggers review sweep", () => {
     mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
 
     await enqueueIngest(TEST_ID, "ok.md")
-    await flushMicrotasks(30)
+    await flushMicrotasks(50)
 
     expect(mockSweep).toHaveBeenCalledOnce()
     expect(mockSweep).toHaveBeenCalledWith("/project", expect.any(AbortSignal))
@@ -363,7 +364,7 @@ describe("ingest-queue — queue-drain triggers review sweep", () => {
     // (We simulate an idle condition by enqueueing, processing, draining once)
     mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
     await enqueueIngest(TEST_ID, "a.md")
-    await flushMicrotasks(20)
+    await flushMicrotasks(50)
     expect(mockSweep).toHaveBeenCalledTimes(1)
 
     // Now the queue is empty. Calling cancelTask on a nonexistent id is a
@@ -402,12 +403,12 @@ describe("ingest-queue — clearQueueState", () => {
   it("processedSinceDrain flag resets so a post-switch no-op won't trigger sweep", async () => {
     mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
     await enqueueIngest(TEST_ID, "x.md")
-    await flushMicrotasks(20)
+    await flushMicrotasks(50)
     mockSweep.mockClear()
 
     clearQueueState()
     // Simulate new drain trigger on an empty queue — no sweep.
-    await flushMicrotasks(5)
+    await flushMicrotasks(10)
     expect(mockSweep).not.toHaveBeenCalled()
   })
 })
