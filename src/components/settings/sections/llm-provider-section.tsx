@@ -98,6 +98,36 @@ export function LlmProviderSection() {
           />
         ))}
       </div>
+
+      {activePresetId === "custom" && (
+        <div className="space-y-2 rounded-md border p-4">
+          <Label htmlFor="ingest-max-tokens">
+            {t("settings.sections.llm.ingestMaxTokens")}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {t("settings.sections.llm.ingestMaxTokensHint")}
+          </p>
+          <Input
+            id="ingest-max-tokens"
+            type="number"
+            min={512}
+            max={100_000}
+            step={256}
+            value={llmConfig.ingestMaxTokens ?? 20480}
+            onChange={(e) => {
+              const v = Number(e.target.value)
+              if (Number.isFinite(v) && v > 0) {
+                const updated = { ...llmConfig, ingestMaxTokens: v }
+                setLlmConfig(updated)
+                import("@/lib/project-store").then(({ saveLlmConfig }) =>
+                  saveLlmConfig(updated).catch(() => {}),
+                )
+              }
+            }}
+            className="w-32"
+          />
+        </div>
+      )}
     </div>
   )
 }

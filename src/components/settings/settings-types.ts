@@ -20,6 +20,7 @@ export interface SettingsDraft {
   apiMode: CustomApiMode | undefined
   reasoning: ReasoningConfig | undefined
   localCliIsolation: boolean
+  ingestMaxTokens: number
 
   // Embedding
   embeddingEnabled: boolean

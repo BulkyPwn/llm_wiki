@@ -42,6 +42,11 @@ interface LlmConfig {
   localCliIsolation?: boolean
   /** Codex CLI provider only. Overall subprocess timeout in minutes. */
   codexCliTimeoutMinutes?: number
+  /**
+   * Maximum output tokens for ingest generation. Capped per the model
+   * provider's API limit (many cap at 20480). Default 20480.
+   */
+  ingestMaxTokens?: number
 }
 
 export type SearchProvider =
@@ -432,6 +437,7 @@ export const useWikiStore = create<WikiState>((set) => ({
     azureApiVersion: "2024-10-21",
     reasoning: { mode: "auto" },
     localCliIsolation: false,
+    ingestMaxTokens: 20480,
   },
   providerConfigs: {},
   activePresetId: null,

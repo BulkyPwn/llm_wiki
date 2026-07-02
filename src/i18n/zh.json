@@ -299,6 +299,8 @@
         "apiMode": "API 模式",
         "endpoint": "Endpoint",
         "contextWindow": "上下文窗口",
+        "ingestMaxTokens": "Ingest 最大输出 Token",
+        "ingestMaxTokensHint": "仅对 Custom 端点生效。限制每次 ingest 生成的最大输出 token 数。部分模型 API 上限为 20480，超出可能导致请求被拒绝。",
         "wireOpenAi": "OpenAI 兼容",
         "wireAnthropic": "Anthropic 兼容",
         "apiKeyPlaceholderCustom": "无 Key 可留空（本地模型）",

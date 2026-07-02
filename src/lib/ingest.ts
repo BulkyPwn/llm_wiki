@@ -2300,10 +2300,21 @@ export function computeIngestSourceBudget(
 
 export function computeIngestGenerationMaxTokens(maxContextSize: number | undefined): number {
   const { maxCtx } = computeContextBudget(maxContextSize)
-  if (maxCtx >= 512_000) return INGEST_GENERATION_TOKENS_512K
-  if (maxCtx >= 256_000) return INGEST_GENERATION_TOKENS_256K
-  if (maxCtx >= 128_000) return INGEST_GENERATION_TOKENS_128K
-  return INGEST_GENERATION_TOKENS_DEFAULT
+  let tokens: number
+  if (maxCtx >= 512_000) tokens = INGEST_GENERATION_TOKENS_512K
+  else if (maxCtx >= 256_000) tokens = INGEST_GENERATION_TOKENS_256K
+  else if (maxCtx >= 128_000) tokens = INGEST_GENERATION_TOKENS_128K
+  else tokens = INGEST_GENERATION_TOKENS_DEFAULT
+
+  // Only the "custom" provider exposes an ingest output cap — known
+  // providers have known limits and the dynamic tiers above are safe.
+  const state = useWikiStore.getState()
+  const isCustom = state.activePresetId === "custom"
+  if (isCustom) {
+    const cap = state.llmConfig.ingestMaxTokens ?? 20_480
+    return Math.min(tokens, Math.max(512, cap))
+  }
+  return tokens
 }
 
 export function computeIngestReviewMaxTokens(maxContextSize: number | undefined): number {

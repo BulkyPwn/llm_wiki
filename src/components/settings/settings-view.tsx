@@ -129,6 +129,7 @@ function initialDraft(
     apiMode: llm.apiMode,
     reasoning: llm.reasoning,
     localCliIsolation: llm.localCliIsolation === true,
+    ingestMaxTokens: llm.ingestMaxTokens ?? 20480,
     embeddingEnabled: embed.enabled,
     embeddingEndpoint: embed.endpoint,
     embeddingApiKey: embed.apiKey,
@@ -350,6 +351,7 @@ export function SettingsView() {
       apiMode: draft.provider === "custom" ? draft.apiMode : undefined,
       reasoning: draft.reasoning,
       localCliIsolation: draft.localCliIsolation,
+      ingestMaxTokens: draft.ingestMaxTokens,
     }
     const newEmbed = {
       enabled: draft.embeddingEnabled,

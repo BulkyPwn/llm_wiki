@@ -299,6 +299,8 @@
         "apiMode": "API Mode",
         "endpoint": "Endpoint",
         "contextWindow": "Context window",
+        "ingestMaxTokens": "Ingest max output tokens",
+        "ingestMaxTokensHint": "Custom endpoint only. Caps output tokens per ingest generation. Many model APIs limit this to 20480; exceeding it may cause the request to be rejected.",
         "wireOpenAi": "OpenAI-compat",
         "wireAnthropic": "Anthropic-compat",
         "apiKeyPlaceholderCustom": "Leave empty if no key (local models)",
