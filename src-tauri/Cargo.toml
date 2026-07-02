@@ -64,6 +64,10 @@ md-5 = "0.10"
 notify = "8"
 walkdir = "2"
 
+# Pin erased-serde to 0.4.9: v0.4.10 has a build-script panic on Windows
+# (erased-serde is a transitive dep of serde-untagged → typeid)
+erased-serde = "=0.4.9"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 
