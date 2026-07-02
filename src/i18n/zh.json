@@ -684,6 +684,8 @@
         "modelVlm": "VLM（推荐，适合复杂排版）",
         "modelPipeline": "Pipeline（更快）",
         "modelHint": "PDF 解析仅使用 pipeline 或 vlm。MinerU-HTML 用于 HTML 文件，这里不会使用。",
+        "apiBase": "API 地址",
+        "apiBaseHint": "自定义 MinerU API 地址。留空使用默认云服务。",
         "test": "测试连接",
         "testQuotaNotice": "连接测试会向 MinerU 提交一个小型示例文件，可能消耗少量额度。",
         "testing": "测试中...",

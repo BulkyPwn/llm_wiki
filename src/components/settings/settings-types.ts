@@ -87,6 +87,7 @@ export interface SettingsDraft {
   mineruEnabled: boolean
   mineruToken: string
   mineruModelVersion: MineruModelVersion
+  mineruApiBase: string
 
   // Local HTTP API server
   apiEnabled: boolean

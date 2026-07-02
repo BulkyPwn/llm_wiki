@@ -684,6 +684,8 @@
         "modelVlm": "VLM (Recommended, best for complex layouts)",
         "modelPipeline": "Pipeline (Faster)",
         "modelHint": "PDF parsing supports pipeline and vlm. MinerU-HTML is for HTML files and is not used here.",
+        "apiBase": "API Endpoint",
+        "apiBaseHint": "Custom MinerU API endpoint. Leave empty to use the default cloud service.",
         "test": "Test Connection",
         "testQuotaNotice": "Connection test submits a small demo file to MinerU and may consume a small amount of quota.",
         "testing": "Testing...",

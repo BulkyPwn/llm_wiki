@@ -24,7 +24,7 @@ export function MineruSection({ draft, setDraft }: Props) {
     setTestState("running")
     setTestError("")
     try {
-      await testMineruConnection(draft.mineruToken.trim())
+      await testMineruConnection(draft.mineruToken.trim(), draft.mineruApiBase.trim())
       setTestState("success")
     } catch (err) {
       setTestState("failed")
@@ -113,6 +113,28 @@ export function MineruSection({ draft, setDraft }: Props) {
               })}
             </p>
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="mineru-api-base">
+              {t("settings.sections.mineru.apiBase", { defaultValue: "API Endpoint" })}
+            </Label>
+            <Input
+              id="mineru-api-base"
+              type="url"
+              value={draft.mineruApiBase}
+              onChange={(e) => {
+                setDraft("mineruApiBase", e.target.value)
+                setTestState("idle")
+              }}
+              placeholder="https://mineru.net/api/v4"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t("settings.sections.mineru.apiBaseHint", {
+                defaultValue: "Custom MinerU API endpoint. Leave empty to use the default cloud service.",
+              })}
+            </p>
+          </div>
+
           <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
             {t("settings.sections.mineru.testQuotaNotice", {
               defaultValue:

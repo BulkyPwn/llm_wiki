@@ -141,6 +141,7 @@ function normalizeMineruConfig(config: MineruConfig): MineruConfig {
     enabled: config.enabled === true,
     token: typeof config.token === "string" ? config.token : "",
     modelVersion: config.modelVersion === "pipeline" ? "pipeline" : "vlm",
+    apiBase: typeof config.apiBase === "string" && config.apiBase.trim() ? config.apiBase : "https://mineru.net/api/v4",
   }
 }
 

@@ -354,6 +354,7 @@ describe("parseWithMineru", () => {
     await expect(parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "mineru-html" as "vlm",
     }, "/tmp/doc.pdf")).rejects.toThrow("pipeline or vlm")
 
@@ -367,6 +368,7 @@ describe("parseWithMineru", () => {
     await expect(parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "vlm",
     }, "/tmp/large.pdf")).rejects.toThrow("200 MB")
 
@@ -381,6 +383,7 @@ describe("parseWithMineru", () => {
     await expect(parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "vlm",
     }, "/tmp/doc.pdf", undefined, undefined, controller.signal)).rejects.toThrow("cancelled")
 
@@ -397,6 +400,7 @@ describe("parseWithMineru", () => {
     await expect(parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "vlm",
     }, "/tmp/doc.pdf")).rejects.toThrow("upload URL")
   })
@@ -426,6 +430,7 @@ describe("parseWithMineru", () => {
     await expect(parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "vlm",
     }, "/tmp/doc.pdf")).resolves.toBe("parsed markdown")
 
@@ -458,6 +463,7 @@ describe("parseWithMineru", () => {
     await expect(parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "vlm",
     }, "/tmp/doc.pdf", undefined, undefined, undefined, {
       projectPath: "/project",
@@ -494,6 +500,7 @@ describe("parseWithMineru", () => {
     const result = await parseWithMineruResult({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "vlm",
     }, "/tmp/doc.pdf", undefined, undefined, undefined, {
       projectPath: "/project",
@@ -523,6 +530,7 @@ describe("parseWithMineru", () => {
     await expect(parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "pipeline",
     }, "/tmp/doc.pdf", "https://example.test/doc.pdf")).resolves.toBe("url markdown")
 
@@ -554,6 +562,7 @@ describe("parseWithMineru", () => {
     await expect(parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "vlm",
     }, "/tmp/doc.pdf")).rejects.toThrow("parse exploded")
   })
@@ -576,6 +585,7 @@ describe("parseWithMineru", () => {
     const result = parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "vlm",
     }, "/tmp/doc.pdf", undefined, undefined, controller.signal)
 
@@ -627,6 +637,7 @@ describe("parseWithMineru", () => {
     await expect(parseWithMineru({
       enabled: true,
       token: "token",
+      apiBase: "https://mineru.net/api/v4",
       modelVersion: "vlm",
     }, "/tmp/doc.pdf", undefined, (msg) => progress.push(msg))).resolves.toBe("parsed markdown")
 

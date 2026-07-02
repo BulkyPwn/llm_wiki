@@ -282,6 +282,7 @@ export interface MineruConfig {
   enabled: boolean
   token: string
   modelVersion: MineruModelVersion
+  apiBase: string
 }
 
 interface MultimodalConfig {
@@ -561,7 +562,7 @@ export const useWikiStore = create<WikiState>((set) => ({
   },
 
   sourceWatchConfig: DEFAULT_SOURCE_WATCH_CONFIG,
-  mineruConfig: { enabled: false, token: "", modelVersion: "vlm" },
+  mineruConfig: { enabled: false, token: "", modelVersion: "vlm", apiBase: "https://mineru.net/api/v4" },
 
   // Default `enabled: true` preserves the pre-toggle behavior: anyone
   // who already had `LLM_WIKI_API_TOKEN` set or `apiConfig.token`

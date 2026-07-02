@@ -7,10 +7,38 @@ describe("project-store MinerU config normalization", () => {
       enabled: true,
       token: "token-123",
       modelVersion: "pipeline",
+      apiBase: "https://custom.example.com/api/v4",
     })).toEqual({
       enabled: true,
       token: "token-123",
       modelVersion: "pipeline",
+      apiBase: "https://custom.example.com/api/v4",
+    })
+  })
+
+  it("falls back to default apiBase when empty or missing", () => {
+    expect(__projectStoreTest.normalizeMineruConfig({
+      enabled: true,
+      token: "token-123",
+      modelVersion: "vlm",
+      apiBase: "",
+    })).toEqual({
+      enabled: true,
+      token: "token-123",
+      modelVersion: "vlm",
+      apiBase: "https://mineru.net/api/v4",
+    })
+
+    expect(__projectStoreTest.normalizeMineruConfig({
+      enabled: true,
+      token: "token-123",
+      modelVersion: "vlm",
+      apiBase: "   ",
+    })).toEqual({
+      enabled: true,
+      token: "token-123",
+      modelVersion: "vlm",
+      apiBase: "https://mineru.net/api/v4",
     })
   })
 
@@ -19,10 +47,12 @@ describe("project-store MinerU config normalization", () => {
       enabled: "yes" as unknown as boolean,
       token: 123 as unknown as string,
       modelVersion: "mineru-html" as "vlm",
+      apiBase: 456 as unknown as string,
     })).toEqual({
       enabled: false,
       token: "",
       modelVersion: "vlm",
+      apiBase: "https://mineru.net/api/v4",
     })
   })
 })

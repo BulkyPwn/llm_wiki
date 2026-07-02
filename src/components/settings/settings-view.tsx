@@ -168,6 +168,7 @@ function initialDraft(
     mineruEnabled: mineru.enabled,
     mineruToken: mineru.token,
     mineruModelVersion: mineru.modelVersion,
+    mineruApiBase: mineru.apiBase,
     apiEnabled: apiConfig.enabled,
     apiAllowUnauthenticated: apiConfig.allowUnauthenticated,
     apiAllowLanAccess: apiConfig.allowLanAccess,
@@ -419,6 +420,7 @@ export function SettingsView() {
       enabled: draft.mineruEnabled,
       token: draft.mineruToken.trim(),
       modelVersion: draft.mineruModelVersion,
+      apiBase: draft.mineruApiBase.trim() || "https://mineru.net/api/v4",
     }
     const newApiConfig = {
       enabled: draft.apiEnabled,
