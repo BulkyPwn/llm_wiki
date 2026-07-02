@@ -1,0 +1,1719 @@
+From 32d6e96e2d4ca0d0abe2e77f5abc8adab1aa17bf Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Fri, 29 May 2026 00:03:21 +0800
+Subject: [PATCH 01/15] support HEADLESS and add introduction markdown
+
+---
+ src-tauri/src/lib.rs                          |    8 +
+ ...56\345\275\225\344\273\243\347\240\201.md" | 1680 +++++++++++++++++
+ 2 files changed, 1688 insertions(+)
+ create mode 100644 "\344\273\213\347\273\215llm_wiki\347\233\256\345\275\225\344\273\243\347\240\201.md"
+
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 04a5702..0c3cb2f 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -201,6 +201,14 @@ pub fn run() {
+                     eprintln!("[tray] failed to update tray availability state: {err}");
+                 }
+             }
++
++            if std::env::var("LLM_WIKI_HEADLESS").map_or(false, |v| !v.is_empty()) {
++                if let Some(window) = app.get_webview_window("main") {
++                    let _ = window.hide();
++                    eprintln!("[headless] Window hidden (LLM_WIKI_HEADLESS is set)");
++                }
++            }
++
+             Ok(())
+         })
+         .invoke_handler(tauri::generate_handler![
+diff --git "a/\344\273\213\347\273\215llm_wiki\347\233\256\345\275\225\344\273\243\347\240\201.md" "b/\344\273\213\347\273\215llm_wiki\347\233\256\345\275\225\344\273\243\347\240\201.md"
+new file mode 100644
+index 0000000..dd44690
+--- /dev/null
++++ "b/\344\273\213\347\273\215llm_wiki\347\233\256\345\275\225\344\273\243\347\240\201.md"
+@@ -0,0 +1,1680 @@
++# 介绍llm_wiki目录代码
++
++> **Workspace:** d:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management
++
++---
++
++## User
++介绍下llm_wiki目录下代码的，架构、原理、关键流程、关键时序和使用方法
++
++## Assistant
++Let me dive into the key files to understand the architecture comprehensively.
++
++以下是 `llm_wiki` 目录下代码的完整介绍。
++
++---
++
++# LLM Wiki 代码架构与原理全解
++
++## 一、项目概述
++
++LLM Wiki 是一个**跨平台桌面应用**（基于 Tauri v2 构建），核心理念源自 Andrej Karpathy 提出的 [LLM Wiki 模式](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)：用 LLM **增量地**将文档构建成结构化、相互链接的个人知识库，而非传统 RAG（每次从头检索-回答）。
++
++**技术栈**：
++- **前端**: React 19 + TypeScript + Zustand + Tailwind CSS v4 + Vite
++- **后端 (Rust)**: Tauri v2 + LanceDB + pdfium + tiny_http
++- **知识图谱**: sigma.js + graphology + ForceAtlas2
++- **编辑器**: Milkdown (Markdown WYSIWYG)
++
++---
++
++## 二、整体架构
++
++### 2.1 三层目录结构 (核心设计哲学)
++
++```
++project/
++├── raw/sources/     ← 不可变的原始文档 (PDF/Word/MD/HTML...)
++├── wiki/            ← LLM 自动生成和维护的结构化 Wiki 页面 (Markdown)
++│   ├── index.md     ← 内容目录，LLM 导航入口
++│   ├── log.md       ← 按时间记录的操作日志
++│   ├── overview.md  ← 全局摘要，每次 ingest 后自动更新
++│   ├── entities/    ← 实体页面
++│   ├── concepts/    ← 概念页面
++│   ├── sources/     ← 源文档摘要页面
++│   ├── queries/     ← 查询/研究结果页面
++│   └── synthesis/   ← 综合分析页面
++├── purpose.md       ← Wiki 存在目的和方向
++├── schema.md        ← 结构规则和配置
++└── .llm-wiki/       ← 内部持久化数据 (队列/快照/LanceDB/缓存)
++```
++
++### 2.2 前后端分层
++
++```
++┌─────────────────────────────────────────────────────────┐
++│  前端 (TypeScript / React / Vite)                        │
++│  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐ │
++│  │Stores   │ │Components│ │Lib       │ │Commands    │ │
++│  │(Zustand)│ │(UI 组件) │ │(核心逻辑)│ │(Tauri IPC) │ │
++│  └─────────┘ └──────────┘ └──────────┘ └──────┬─────┘ │
++│                                                 │       │
++├─────────────────────────────────────────────────┼───────┤
++│  后端 (Rust / Tauri)                            │IPC     │
++│  ┌──────────┐ ┌───────────┐ ┌───────────────┐  │       │
++│  │commands  │ │api_server │ │clip_server    │  │       │
++│  │FS/搜索/  │ │HTTP API   │ │剪贴板服务     │  │       │
++│  │向量存储/ │ │:19828     │ │               │  │       │
++│  │文件同步  │ │           │ │               │  │       │
++│  └──────────┘ └───────────┘ └───────────────┘  │       │
++│  ┌──────────┐ ┌───────────┐                     │       │
++│  │LanceDB   │ │pdfium     │                     │       │
++│  │向量数据库│ │PDF 提取   │                     │       │
++│  └──────────┘ └───────────┘                     │       │
++└─────────────────────────────────────────────────────────┘
++```
++
++### 2.3 前端组件树
++
++```
++App.tsx
++├── WelcomeScreen              (首次启动/选择项目)
++├── CreateProjectDialog        (新建项目 + 场景模板选择)
++└── AppLayout
++    ├── IconSidebar            (左侧图标导航栏: Wiki, Sources, Search, Graph, Lint, Review, Research, Settings)
++    ├── SidebarPanel
++    │   ├── FileTree           (文件树: wiki/ + raw/sources/)
++    │   └── KnowledgeTree      (知识分类树)
++    ├── ContentArea
++    │   ├── ChatPanel          (中心对话区: chat / ingest 两种模式)
++    │   ├── WikiEditor         (Markdown 编辑器)
++    │   ├── WikiReader         (只读预览)
++    │   ├── GraphView          (知识图谱可视化)
++    │   ├── SearchView         (搜索面板)
++    │   ├── LintView           (质量检查结果)
++    │   ├── ReviewView         (待审查项目列表)
++    │   ├── ResearchPanel      (深度研究队列)
++    │   ├── SourcesView        (数据源管理)
++    │   └── SettingsView       (配置面板)
++    ├── PreviewPanel            (右侧预览)
++    ├── ActivityPanel           (底部活动状态: 队列进度)
++    └── UpdateBanner            (版本更新提示)
++```
++
++### 2.4 前端核心模块 (`src/lib/` + `src/stores/`)
++
++| 模块 | 职责 |
++|------|------|
++| `ingest.ts` | **两步 Chain-of-Thought 摄入引擎**：分析→生成，含缓存、安全校验、Review 块解析 |
++| `ingest-queue.ts` | **持久化摄入队列**：串行处理、崩溃恢复、重试、清理 |
++| `ingest-cache.ts` | **SHA256 增量缓存**：源文件哈希后跳过未变更文件 |
++| `deep-research.ts` | **深度研究**：多查询 Web 搜索 → LLM 合成 → 自动写入 Wiki |
++| `chat-panel.tsx` | **聊天查询**：多阶段检索 + 上下文预算 + LLM 回答 |
++| `search.ts` / `graph-search.ts` | **搜索管道**：分词(BM25) + 可选向量搜索 + RRF 融合 |
++| `graph-relevance.ts` | **4 信号相关性模型**：直接链接/源重叠/Adamic-Adar/类型亲和 |
++| `graph-insights.ts` | **图洞察**：意外连接、知识缺口、桥梁节点 |
++| `embedding.ts` | **向量嵌入管道**：分块→嵌入→LanceDB 存储→chunk 级搜索 |
++| `context-budget.ts` | **上下文预算分配**：按比例分配 index(5%)/pages(50%)/response(15%) |
++| `enrich-wikilinks.ts` | **Wikilink 富化**：LLM 返回 link 列表，代码执行替换（防止 LLM 改写内容） |
++| `llm-client.ts` | **LLM 客户端**：多 Provider (OpenAI/Anthropic/Google/Azure/Ollama/Custom/Claude-Code/Codex-CLI) 统一流式接口 |
++| `web-search.ts` | **Web 搜索**：Tavily/SerpApi/SearXNG/Ollama 多后端 |
++| `llm-providers.ts` | **LLM Provider 抽象**：URL 构建、Header 注入、Body 适配 |
++
++### 2.5 状态管理 Stores (Zustand)
++
++| Store | 职责 |
++|-------|------|
++| `wiki-store.ts` | **核心 Wiki 状态**：项目信息、文件树、LLM/搜索/嵌入/多模态配置 |
++| `chat-store.ts` | **对话管理**：多轮对话、消息历史、Streaming 状态 |
++| `activity-store.ts` | **活动面板**：队列进度、文件级处理状态 |
++| `review-store.ts` | **审阅系统**：矛盾/重复/建议项的增删改查 |
++| `research-store.ts` | **深度研究队列**：任务排队、并发控制、状态追踪 |
++| `file-sync-store.ts` | **文件同步**：外部变更检测队列状态 |
++| `update-store.ts` | **版本更新检测** |
++
++---
++
++## 三、设计原理
++
++### 3.1 核心原则：Human Curates, LLM Maintains
++
++- **人** 提供原始文档（raw/sources/）、定义目的（purpose.md）、审阅 LLM 发现的问题
++- **LLM** 负责阅读、分析、生成 Wiki 页面、维护索引和交叉引用、发现知识缺口
++
++### 3.2 两步 Chain-of-Thought 摄入
++
++传统方案让 LLM 边读边写，质量不稳定。LLM Wiki 拆成两次 LLM 调用：
++
++```
++Step 1 (分析):
++  输入: 源文档 + 现有 Wiki 上下文 (index.md / overview.md / purpose.md)
++  输出: 结构化分析
++    - 关键实体、概念、论点
++    - 与现有内容的关联
++    - 矛盾与冲突
++    - 结构化建议
++
++Step 2 (生成):
++  输入: Step 1 的分析结果 + Wiki 上下文
++  输出: Markdown 文件块 (---FILE: path--- ... ---END FILE---)
++    - 源摘要、实体页、概念页、交叉引用
++    - 更新 index.md / log.md / overview.md
++    - Review 块 (---REVIEW: type|title--- ... ---END REVIEW---)
++```
++
++这种拆分的优势：第一步产出高质量结构化分析，第二步只需专注「写作」，质量远超一步到位。
++
++### 3.3 4 信号知识图谱相关性模型
++
++```typescript
++WEIGHTS = {
++  directLink:     3.0,   // [[wikilink]] 直接链接
++  sourceOverlap:  4.0,   // 共享同一原始来源 (frontmatter sources[])
++  commonNeighbor: 1.5,   // Adamic-Adar: 共同邻居 / log(邻居度)
++  typeAffinity:   1.0,   // 同类型页面加权 (entity↔concept 等)
++}
++```
++
++- **源重叠权重最高**（4.0）—— 同一个 PDF 产生的多个实体/概念天然高度相关
++- **Adamic-Adar** 惩罚大度节点（hub），奖励专有共享邻居
++
++### 3.4 上下文预算分配
++
++每次聊天查询时，按比例分配 LLM 上下文窗口：
++
++```
++maxCtx (100%)
++├── index  (5%)    ← wiki/index.md 摘要
++├── pages  (50%)   ← 检索到的相关页面内容
++├── reserve (15%)   ← 预留给 LLM 回答输出
++└── remaining (30%) ← 留给 system prompt + 对话历史 + 用户问题
++```
++
++[context-budget.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/context-budget.ts) 中的纯函数实现，支持 8K ~ 1M+ 上下文窗口的自适应缩放。
++
++### 3.5 多阶段检索
++
++```
++Phase 1: 分词搜索 (BM25)
++  - 英文: 单词切分 + 停用词移除
++  - 中文: CJK bigram (每个 → [每个, 个…])
++  - 标题匹配加权 (+50), 精确文件名匹配 (+200)
++
++Phase 2 (可选): 向量语义搜索 (LanceDB)
++  - Chunk 级嵌入 → 多 chunk 聚合评分 (max-pool + tail sum)
++  - 嵌入维度自适应 (支持 OpenAI-compatible + Gemini embedding)
++
++Phase 3: RRF 融合
++  - Reciprocal Rank Fusion (k=60) 合成分词和向量排序
++  - 最后按 relevance graph 对结果做单跳邻居扩展
++```
++
++### 3.6 持久化摄入队列
++
++设计要点：
++- **串行处理**：防止并发 LLM 调用产生竞态写入
++- **磁盘持久化**：队列写入 `.llm-wiki/ingest-queue.json`，应用重启可恢复
++- **重试机制**：失败任务最多重试 3 次
++- **SHA256 缓存**：未变更的源文件自动跳过
++- **Stale context guard**：切换项目时运行中的 ingestion 自动取消
++
++---
++
++## 四、关键流程和时序
++
++### 4.1 摄入流程 (Ingest)
++
++```
++用户操作                IngestQueue              IngestEngine              Rust Backend
++  │                        │                        │                        │
++  │ 拖入文件/文件夹         │                        │                        │
++  ├───────────────────────>│                        │                        │
++  │                        │ enqueue(tasks)         │                        │
++  │                        │ saveQueue() ─────────────────────────────────>│ (写 JSON)
++  │                        │                        │                        │
++  │                        │ processNext()          │                        │
++  │                        ├───────────────────────>│                        │
++  │                        │                        │ checkCache(SHA256)     │
++  │                        │                        ├───────────────────────>│ readFile
++  │                        │                        │<───────────────────────┤ hash
++  │                        │                        │ (若命中缓存, 跳过)      │
++  │                        │                        │                        │
++  │                        │                        │ readFile + preprocess  │
++  │                        │                        ├───────────────────────>│ readFile
++  │                        │                        │<───────────────────────┤ content
++  │                        │                        │                        │
++  │                        │                        │ Step 1: LLM 分析       │
++  │                        │                        ├─ streamChat(analysis)  │
++  │                        │                        │   (system prompt +     │
++  │                        │                        │    purpose + index +   │
++  │                        │                        │    overview + source)  │
++  │                        │                        │                        │
++  │                        │                        │ Step 2: LLM 生成       │
++  │                        │                        ├─ streamChat(generation)│
++  │                        │                        │   (analysis + context) │
++  │                        │                        │                        │
++  │                        │                        │ parseFileBlocks()      │
++  │                        │                        │ - 安全路径校验          │
++  │                        │                        │ - mergePageContent()   │
++  │                        │                        │ - 写 index.md/log.md   │
++  │                        │                        ├───────────────────────>│ writeFile(s)
++  │                        │                        │                        │
++  │                        │                        │ parseReviewBlocks()    │
++  │                        │                        │ saveIngestCache()      │
++  │                        │                        ├───────────────────────>│ writeFile (cache)
++  │                        │                        │                        │
++  │  UI 更新                │<─ activityStore        │<─ fileTree refresh     │
++  │<───────────────────────┤                        │                        │
++```
++
++### 4.2 聊天查询流程 (Chat Query)
++
++```
++用户输入问题             ChatPanel               Search Pipeline          LLM
++  │                        │                        │                      │
++  │ 输入问题 + 发送         │                        │                      │
++  ├───────────────────────>│                        │                      │
++  │                        │ computeContextBudget()  │                      │
++  │                        │ (基于 LLM maxContext)    │                      │
++  │                        │                        │                      │
++  │                        │ 判断是否问候语           │                      │
++  │                        ├─ isGreeting()           │                      │
++  │                        │   (短消息直接回答)       │                      │
++  │                        │                        │                      │
++  │                        │ searchWiki()           │                      │
++  │                        ├───────────────────────>│                      │
++  │                        │                        │ Phase 1: BM25 分词   │
++  │                        │                        ├─ CJK bigram / word   │
++  │                        │                        │                        │
++  │                        │                        │ Phase 2 (可选):       │
++  │                        │                        ├─ fetchEmbedding()    │
++  │                        │                        ├─ vectorSearch()      │
++  │                        │                        │                        │
++  │                        │                        │ Phase 3: RRF 融合    │
++  │                        │                        │ (k=60 reciprocal      │
++  │                        │                        │  rank fusion)         │
++  │                        │<───────────────────────┤ results[]             │
++  │                        │                        │                      │
++  │                        │ buildRetrievalGraph()  │                      │
++  │                        │ getRelatedNodes()      │                      │
++  │                        │ (单跳邻居扩展)          │                      │
++  │                        │                        │                      │
++  │                        │ 组装 context:          │                      │
++  │                        │  system_prompt         │                      │
++  │                        │  + index.md (限制 5%)   │                      │
++  │                        │  + 检索页面 (限制 50%)  │                      │
++  │                        │  + 对话历史             │                      │
++  │                        │  + 用户问题             │                      │
++  │                        ├──────────────────────────────────────────────>│
++  │                        │                        │    streamChat()       │
++  │                        │<──────────────────────────────────────────────┤
++  │                        │ onToken() 流式更新 UI   │                      │
++  │<── 流式显示 ──────────┤                        │                      │
++  │                        │                        │                      │
++  │                        │ enrichWithWikilinks()  │                      │
++  │                        │ (后台异步富化引用链接)   │                      │
++```
++
++### 4.3 深度研究 (Deep Research) 时序
++
++```
++触发 (Graph Insights "Research" 按钮 or 手动)
++  │
++  ├─ optimizeResearchTopic() ─── LLM 根据 purpose + overview 生成精准搜索主题和 3 个搜索查询
++  │
++  ├─ queueResearch() ─── 加入研究队列，最多 3 个并发
++  │
++  └─ executeResearch():
++       │
++       ├─ Step 1: Searching
++       │   └─ webSearch() × N 个查询 → 合并 + URL 去重
++       │       ├─ Tavily API   (POST api.tavily.com/search)
++       │       ├─ SerpApi      (GET serpapi.com/search?engine=google)
++       │       ├─ SearXNG      (自托管实例)
++       │       └─ Ollama       (Ollama Web Search API)
++       │
++       ├─ Step 2: Synthesizing
++       │   └─ streamChat() ─── LLM 合成搜索结果
++       │       (流式输出到 UI，用户可见实时文本)
++       │
++       └─ Step 3: Saving
++           ├─ writeFile(wiki/queries/research-{slug}-{date}.md)
++           ├─ 刷新 file tree
++           └─ autoIngest() ─── 对研究成果再做一次摄入
++               (生成实体页、概念页、交叉引用)
++```
++
++### 4.4 知识图谱构建时序
++
++```
++用户切换到 Graph 视图
++  │
++  ├─ buildRetrievalGraph()
++  │   ├─ listDirectory(wiki/) ─── 遍历所有 .md 文件
++  │   ├─ readFile(每个 .md) ─── 提取 frontmatter (title, type, sources)
++  │   ├─ 解析 [[wikilink]] ─── 构建节点和边
++  │   └─ 返回 RetrievalGraph (nodes + edges)
++  │
++  ├─ buildWikiGraph()
++  │   ├─ 节点: id, title, type, linkCount
++  │   ├─ 边: source, target, weight (4-signal model)
++  │   └─ 类型映射 (entity/concept/source/query/synthesis → 颜色)
++  │
++  ├─ computeLouvainCommunities()
++  │   └─ graphology-communities-louvain → 12 色聚类
++  │
++  ├─ computeCohesionScores()
++  │   └─ 每个社区的边密度 (实际边 / 可能边)
++  │
++  ├─ findSurprisingConnections()
++  │   └─ 跨社区边、跨类型边、边缘→中枢耦合
++  │
++  ├─ findKnowledgeGaps()
++  │   ├─ isolated nodes (degree ≤ 1)
++  │   ├─ sparse communities (cohesion < 0.15)
++  │   └─ bridge nodes (连接 ≥3 个社区)
++  │
++  └─ ForceAtlas2 layout → sigma.js 渲染
++```
++
++### 4.5 文件同步 (Source Watch) 时序
++
++```
++Rust 后端启动
++  │
++  ├─ start_project_file_watcher()
++  │   └─ notify::RecommendedWatcher 监听 raw/sources/
++  │
++  ├─ 初始快照: 扫描整个 raw/sources/ → file-snapshot.json
++  │   (存储每个文件的 hash + size + mtime)
++  │
++  └─ 事件循环:
++       │
++       ├─ Created 事件 → 计算 hash → 入队 FileChangeTask
++       ├─ Modified 事件 → 比较 hash → 若变更入队
++       ├─ Deleted 事件 → 入队删除任务
++       │
++       └─ 通过 Tauri Event 通知前端:
++           ├─ file-sync://queue-updated → UI 更新
++           └─ file-sync://changed → 触发 ingest/delete
++```
++
++---
++
++## 五、Rust 后端核心模块
++
++### 5.1 Commands (IPC 命令)
++
++| 文件 | 职责 |
++|------|------|
++| `fs.rs` | 文件 CRUD、预处理（PDF/Word/Excel→Markdown）、文件树遍历 |
++| `search.rs` | **混合搜索引擎**：BM25 分词 + 向量搜索 + RRF 融合 + 图片引用提取 |
++| `vectorstore.rs` | **LanceDB 向量存储**：v1(per-page) + v2(per-chunk) 两套表、增删查 |
++| `file_sync.rs` | **文件系统监听**：notify watcher、MD5 快照、变更队列持久化 |
++| `project.rs` | 项目创建/打开 |
++| `claude_cli.rs` | Claude Code CLI 子进程传输（stdin/stdout） |
++| `codex_cli.rs` | Codex CLI 子进程传输 |
++| `extract_images.rs` | 使用 pdfium 从 PDF/Office 提取嵌入图片 |
++
++### 5.2 API Server (内置 HTTP API)
++
++在 `127.0.0.1:19828/api/v1` 提供 JSON API：
++- **Token 保护**：随机生成 token，存储在 `.llm-wiki/api-token`
++- **混合搜索**：`POST /api/v1/search`
++- **文件读取**：`GET /api/v1/file?path=...`
++- **图谱遍历**：支持 2-hop 邻居查询
++- **源重新扫描**：外部工具可触发重新摄入
++- **限流**：每秒 120 请求，最多 64 并发
++
++配套有 [llm_wiki_skill](https://github.com/nashsu/llm_wiki_skill) 可直接安装到 Claude Code / Codex 中使用。
++
++### 5.3 Clip Server
++
++内置剪贴板监听服务，配合 Chrome 扩展（`extension/` 目录）实现一键网页剪藏→自动摄入。
++
++---
++
++## 六、关键设计亮点
++
++### 6.1 安全路径校验
++
++[ingest.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/ingest.ts) 中的 `isSafeIngestPath()` 对 LLM 生成的 FILE 路径做严格校验：
++
++- 拒绝绝对路径、`..` 穿越、Windows 盘符
++- 拒绝 Windows 保留设备名（CON, PRN, NUL, COM1-9, LPT1-9）
++- 只允许 `wiki/` 子目录写入
++- 防止 prompt injection 攻击（源文件中嵌入恶意指令让 LLM 写入系统文件）
++
++### 6.2 Enrich Wikilinks 的安全设计
++
++[enrich-wikilinks.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/enrich-wikilinks.ts) 采用了**防御性设计**：
++- v1 版本让 LLM 返回完整页面（含 [[wikilink]]），导致某些模型（MiniMax 等）趁机改写/扩展内容
++- v2 改为：LLM 只返回 `{term, target}` JSON 列表，代码做精确字符串替换
++- **字符级别不变**：除了插入的 `[[ ]]`，页面其他内容完全不变
++
++### 6.3 摄入队列的项目隔离
++
++[ingest-queue.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/ingest-queue.ts) 使用 `currentProjectId` 做 **stale context guard**：
++- 切换项目时，运行中的 ingestion 检测到 projectId 不匹配 → 立即中止
++- 防止旧项目的 LLM 输出写入新项目的 wiki/ 目录
++
++### 6.4 嵌入的自动降级
++
++[embedding.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/embedding.ts) 中的 `fetchEmbedding()`：
++- 检测到「输入过长」错误（HTTP 413 或 body 含 "too long" 等）→ 自动将文本减半重试
++- 作为 chunker 配置的安全网，不是主要防线
++
++---
++
++## 七、使用方法
++
++### 7.1 项目初始化
++
++```
++npm install          # 安装前端依赖
++npm run tauri dev    # 开发模式启动
++npm run tauri build  # 生产构建
++```
++
++### 7.2 创建 Wiki 项目
++
++1. 启动应用 → 选择「新建项目」
++2. 选择场景模板（Research / Reading / Personal Growth / Business / General）
++   - 每种模板预设了 `purpose.md` 和 `schema.md` 以及目录结构
++3. 指定项目路径 → 创建
++
++### 7.3 配置 LLM
++
++在 **Settings → LLM Provider** 中配置：
++- **Provider**: OpenAI / Anthropic / Google / Azure / Ollama / Custom (OpenAI-compatible) / MiniMax / Claude Code CLI / Codex CLI
++- **API Key / Endpoint / Model**
++- **Max Context Size** (字符数)
++- **Reasoning 模式** (针对 DeepSeek-R1 等推理模型)
++
++### 7.4 添加源文档
++
++方式一：**拖拽** PDF/Word/Markdown/HTML 文件到 Sources 区域
++方式二：**文件夹导入**，保留目录结构，文件夹路径作为 LLM 分类上下文
++方式三：**Chrome 扩展**一键网页剪藏
++方式四：直接放入 `raw/sources/` 目录（自动检测）
++
++### 7.5 核心操作
++
++| 操作 | 入口 | 说明 |
++|------|------|------|
++| **Ingest** | 拖入文件 / Sources 视图 | LLM 两步分析+生成 Wiki 页面 |
++| **Chat Query** | 中心对话区 | 基于检索的问答，引用具体页面 |
++| **Knowledge Graph** | 左侧 Graph 图标 | 可视化浏览知识关联、社区结构 |
++| **Graph Insights** | Graph 视图顶部 | 意外连接、知识缺口、桥梁节点 |
++| **Deep Research** | Graph Insights / 手动 | 多 Web 搜索 → LLM 合成 → 自动摄入 |
++| **Lint** | 左侧 Lint 图标 | Wiki 质量检查（孤立页、断链等） |
++| **Review** | 左侧 Review 图标 | 处理 LLM 标记的矛盾/建议 |
++| **Search** | 左侧 Search 图标 | 全文搜索（含图片引用搜索） |
++
++### 7.6 向量搜索配置 (可选)
++
++在 **Settings → Embedding** 中：
++1. 启用向量搜索
++2. 配置 embedding endpoint（支持任何 OpenAI-compatible 接口）
++3. 可调 chunk 参数（target/max/overlap chars）
++4. 启用后，新摄入的页面会自动嵌入，搜索时自动融合 BM25 + 向量结果
++
++### 7.7 外部集成
++
++**本地 HTTP API** 在 `127.0.0.1:19828` 提供编程接口：
++- Token 查看：Settings → API Server → 复制 token
++- 安装 Agent Skill：`npx skills add nashsu/llm_wiki_skill`
++
++**Obsidian 兼容**：Wiki 目录本身就是标准的 Obsidian Vault（Markdown + [[wikilink]] + YAML frontmatter），可以直接用 Obsidian 打开编辑。
++
++---
++
++## 八、总结
++
++LLM Wiki 的核心价值在于将 LLM 从「每次重新推理」的 RAG 模式转变为「增量构建持久知识库」的模式。其代码架构清晰地体现了这一理念：
++
++- **前端**负责 UI 交互、状态管理、图形可视化和 LLM 对话编排
++- **Rust 后端**负责文件系统操作、向量存储、搜索引擎、文件监听等高性能/系统级任务
++- **摄入引擎**是最复杂的核心模块，使用两步 CoT + 持久化队列 + 增量缓存 + 安全校验来确保质量、可靠性和安全性
++- **知识图谱**使用 4 信号相关性模型 + Louvain 社区检测 + 图洞察，超越了原始设计的简单 wikilink 链接
++
++## User
++介绍下llm_wiki目录下代码的，架构、原理、关键流程、关键时序和使用方法
++
++## Assistant
++Error: The model `GLM-5` does not exist or you do not have access to it. (Model Provider Error Code: model_not_found, HTTP Status: 404)
++
++## User
++介绍下llm_wiki目录下代码的，架构、原理、关键流程、关键时序和使用方法
++
++## Assistant
++我已在上一轮对话中对 `llm_wiki` 目录进行了完整的分析。以下是相同的完整介绍：
++
++---
++
++# LLM Wiki 代码架构与原理全解
++
++## 一、项目概述
++
++LLM Wiki 是一个**跨平台桌面应用**（基于 Tauri v2 构建），核心理念源自 Andrej Karpathy 的 LLM Wiki 模式：用 LLM **增量地**将文档构建成结构化、相互链接的个人知识库，而非传统 RAG（每次从头检索-回答）。
++
++**技术栈**：
++- **前端**: React 19 + TypeScript + Zustand + Tailwind CSS v4 + Vite
++- **后端 (Rust)**: Tauri v2 + LanceDB + pdfium + tiny_http
++- **知识图谱**: sigma.js + graphology + ForceAtlas2
++- **编辑器**: Milkdown (Markdown WYSIWYG)
++
++---
++
++## 二、整体架构
++
++### 2.1 三层目录结构（核心设计哲学）
++
++```
++project/
++├── raw/sources/     ← 不可变的原始文档 (PDF/Word/MD/HTML...)
++├── wiki/            ← LLM 自动生成和维护的结构化 Wiki 页面
++│   ├── index.md     ← 内容目录，LLM 导航入口
++│   ├── log.md       ← 按时间记录的操作日志
++│   ├── overview.md  ← 全局摘要，每次 ingest 后自动更新
++│   ├── entities/    ← 实体页面
++│   ├── concepts/    ← 概念页面
++│   ├── sources/     ← 源文档摘要页面
++│   ├── queries/     ← 查询/研究结果页面
++│   └── synthesis/   ← 综合分析页面
++├── purpose.md       ← Wiki 存在目的和方向
++├── schema.md        ← 结构规则和配置
++└── .llm-wiki/       ← 内部持久化数据 (队列/快照/LanceDB/缓存)
++```
++
++### 2.2 前后端分层
++
++```
++┌─────────────────────────────────────────────────────────┐
++│  前端 (TypeScript / React / Vite)                        │
++│  ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐ │
++│  │Stores   │ │Components│ │Lib       │ │Commands    │ │
++│  │(Zustand)│ │(UI 组件) │ │(核心逻辑)│ │(Tauri IPC) │ │
++│  └─────────┘ └──────────┘ └──────────┘ └──────┬─────┘ │
++│                                                 │       │
++├─────────────────────────────────────────────────┼───────┤
++│  后端 (Rust / Tauri)                            │IPC     │
++│  ┌──────────┐ ┌───────────┐ ┌───────────────┐  │       │
++│  │commands  │ │api_server │ │clip_server    │  │       │
++│  │FS/搜索/  │ │HTTP API   │ │剪贴板服务     │  │       │
++│  │向量存储/ │ │:19828     │ │               │  │       │
++│  │文件同步  │ │           │ │               │  │       │
++│  └──────────┘ └───────────┘ └───────────────┘  │       │
++│  ┌──────────┐ ┌───────────┐                     │       │
++│  │LanceDB   │ │pdfium     │                     │       │
++│  │向量数据库│ │PDF 提取   │                     │       │
++│  └──────────┘ └───────────┘                     │       │
++└─────────────────────────────────────────────────────────┘
++```
++
++### 2.3 前端组件树
++
++```
++App.tsx
++├── WelcomeScreen              (首次启动/选择项目)
++├── CreateProjectDialog        (新建项目 + 场景模板选择)
++└── AppLayout
++    ├── IconSidebar            (左侧图标导航栏)
++    ├── SidebarPanel
++    │   ├── FileTree           (文件树)
++    │   └── KnowledgeTree      (知识分类树)
++    ├── ContentArea
++    │   ├── ChatPanel          (中心对话区: chat / ingest 两种模式)
++    │   ├── WikiEditor / WikiReader  (Markdown 编辑/预览)
++    │   ├── GraphView          (知识图谱可视化)
++    │   ├── SearchView         (搜索面板)
++    │   ├── LintView           (质量检查结果)
++    │   ├── ReviewView         (待审查项目列表)
++    │   ├── ResearchPanel      (深度研究队列)
++    │   └── SourcesView        (数据源管理)
++    ├── PreviewPanel            (右侧预览)
++    ├── ActivityPanel           (底部活动状态: 队列进度)
++    └── UpdateBanner            (版本更新提示)
++```
++
++### 2.4 前端核心模块 (`src/lib/` + `src/stores/`)
++
++| 模块 | 职责 |
++|------|------|
++| [ingest.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/ingest.ts) | **两步 Chain-of-Thought 摄入引擎**：分析→生成，含缓存、安全校验、Review 块解析 |
++| [ingest-queue.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/ingest-queue.ts) | **持久化摄入队列**：串行处理、崩溃恢复、重试、清理 |
++| [ingest-cache.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/ingest-cache.ts) | **SHA256 增量缓存**：源文件哈希后跳过未变更文件 |
++| [deep-research.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/deep-research.ts) | **深度研究**：多查询 Web 搜索 → LLM 合成 → 自动写入 Wiki |
++| [chat-panel.tsx](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/components/chat/chat-panel.tsx) | **聊天查询**：多阶段检索 + 上下文预算 + LLM 回答 |
++| [graph-relevance.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/graph-relevance.ts) | **4 信号相关性模型**：直接链接/源重叠/Adamic-Adar/类型亲和 |
++| [graph-insights.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/graph-insights.ts) | **图洞察**：意外连接、知识缺口、桥梁节点 |
++| [embedding.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/embedding.ts) | **向量嵌入管道**：分块→嵌入→LanceDB 存储→chunk 级搜索 |
++| [context-budget.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/context-budget.ts) | **上下文预算分配**：按比例分配 index(5%)/pages(50%)/response(15%) |
++| [enrich-wikilinks.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/enrich-wikilinks.ts) | **Wikilink 富化**：LLM 返回 link 列表，代码执行替换 |
++| [llm-client.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/llm-client.ts) | **LLM 客户端**：多 Provider 统一流式接口 |
++| [web-search.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/web-search.ts) | **Web 搜索**：Tavily/SerpApi/SearXNG/Ollama 多后端 |
++
++### 2.5 状态管理 Stores (Zustand)
++
++| Store | 职责 |
++|-------|------|
++| [wiki-store.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/stores/wiki-store.ts) | 项目信息、文件树、LLM/搜索/嵌入/多模态配置 |
++| [chat-store.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/stores/chat-store.ts) | 多轮对话、消息历史、Streaming 状态 |
++| [activity-store.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/stores/activity-store.ts) | 队列进度、文件级处理状态 |
++| [review-store.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/stores/review-store.ts) | 矛盾/重复/建议项的增删改查 |
++| [research-store.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/stores/research-store.ts) | 深度研究队列、并发控制、状态追踪 |
++
++---
++
++## 三、设计原理
++
++### 3.1 核心原则：Human Curates, LLM Maintains
++
++- **人** 提供原始文档（raw/sources/）、定义目的（purpose.md）、审阅 LLM 发现的问题
++- **LLM** 负责阅读、分析、生成 Wiki 页面、维护索引和交叉引用、发现知识缺口
++
++### 3.2 两步 Chain-of-Thought 摄入
++
++传统方案让 LLM 边读边写，质量不稳定。LLM Wiki 拆成两次 LLM 调用：
++
++```
++Step 1 (分析):
++  输入: 源文档 + 现有 Wiki 上下文 (index.md / overview.md / purpose.md)
++  输出: 结构化分析
++    - 关键实体、概念、论点
++    - 与现有内容的关联
++    - 矛盾与冲突
++    - 结构化建议
++
++Step 2 (生成):
++  输入: Step 1 的分析结果 + Wiki 上下文
++  输出: Markdown 文件块 (---FILE: path--- ... ---END FILE---)
++    - 源摘要、实体页、概念页、交叉引用
++    - 更新 index.md / log.md / overview.md
++    - Review 块 (---REVIEW: type|title--- ... ---END REVIEW---)
++```
++
++### 3.3 4 信号知识图谱相关性模型
++
++```typescript
++WEIGHTS = {
++  directLink:     3.0,   // [[wikilink]] 直接链接
++  sourceOverlap:  4.0,   // 共享同一原始来源 (frontmatter sources[])
++  commonNeighbor: 1.5,   // Adamic-Adar: 共同邻居 / log(邻居度)
++  typeAffinity:   1.0,   // 同类型页面加权 (entity↔concept 等)
++}
++```
++
++- **源重叠权重最高**（4.0）—— 同一个 PDF 产生的多个实体/概念天然高度相关
++- **Adamic-Adar** 惩罚大度节点（hub），奖励专有共享邻居
++
++### 3.4 上下文预算分配
++
++每次聊天查询时，按比例分配 LLM 上下文窗口：
++
++```
++maxCtx (100%)
++├── index  (5%)    ← wiki/index.md 摘要
++├── pages  (50%)   ← 检索到的相关页面内容
++├── reserve (15%)   ← 预留给 LLM 回答输出
++└── remaining (30%) ← 留给 system prompt + 对话历史 + 用户问题
++```
++
++支持 8K ~ 1M+ 上下文窗口的自适应缩放。
++
++### 3.5 多阶段检索
++
++```
++Phase 1: 分词搜索 (BM25)
++  - 英文: 单词切分 + 停用词移除
++  - 中文: CJK bigram
++  - 标题匹配加权 (+50), 精确文件名匹配 (+200)
++
++Phase 2 (可选): 向量语义搜索 (LanceDB)
++  - Chunk 级嵌入 → 多 chunk 聚合评分 (max-pool + tail sum)
++
++Phase 3: RRF 融合
++  - Reciprocal Rank Fusion (k=60) 合成分词和向量排序
++  - 最后按 relevance graph 对结果做单跳邻居扩展
++```
++
++---
++
++## 四、关键流程和时序
++
++### 4.1 摄入流程 (Ingest)
++
++```
++用户操作                IngestQueue              IngestEngine              Rust Backend
++  │                        │                        │                        │
++  │ 拖入文件/文件夹         │                        │                        │
++  ├───────────────────────>│                        │                        │
++  │                        │ enqueue(tasks)         │                        │
++  │                        │ saveQueue() ─────────────────────────────────>│ (写 JSON)
++  │                        │                        │                        │
++  │                        │ processNext()          │                        │
++  │                        ├───────────────────────>│                        │
++  │                        │                        │ checkCache(SHA256)     │
++  │                        │                        ├───────────────────────>│ readFile
++  │                        │                        │<───────────────────────┤ hash
++  │                        │                        │ (若命中缓存, 跳过)      │
++  │                        │                        │                        │
++  │                        │                        │ Step 1: LLM 分析       │
++  │                        │                        ├─ streamChat(analysis)  │
++  │                        │                        │                        │
++  │                        │                        │ Step 2: LLM 生成       │
++  │                        │                        ├─ streamChat(generation)│
++  │                        │                        │                        │
++  │                        │                        │ parseFileBlocks()      │
++  │                        │                        │ - 安全路径校验          │
++  │                        │                        │ - mergePageContent()   │
++  │                        │                        │ - 写 index.md/log.md   │
++  │                        │                        ├───────────────────────>│ writeFile(s)
++  │                        │                        │                        │
++  │                        │                        │ parseReviewBlocks()    │
++  │                        │                        │ saveIngestCache()      │
++  │                        │                        ├───────────────────────>│ writeFile (cache)
++  │                        │                        │                        │
++  │  UI 更新                │<─ activityStore        │<─ fileTree refresh     │
++  │<───────────────────────┤                        │                        │
++```
++
++### 4.2 聊天查询流程 (Chat Query)
++
++```
++用户输入问题             ChatPanel               Search Pipeline          LLM
++  │                        │                        │                      │
++  │ 输入问题 + 发送         │                        │                      │
++  ├───────────────────────>│                        │                      │
++  │                        │ computeContextBudget()  │                      │
++  │                        │ (基于 LLM maxContext)    │                      │
++  │                        │                        │                      │
++  │                        │ searchWiki()           │                      │
++  │                        ├───────────────────────>│                      │
++  │                        │                        │ Phase 1: BM25 分词   │
++  │                        │                        │ Phase 2: 向量搜索    │
++  │                        │                        │ Phase 3: RRF 融合    │
++  │                        │<───────────────────────┤ results[]             │
++  │                        │                        │                      │
++  │                        │ buildRetrievalGraph()  │                      │
++  │                        │ getRelatedNodes()      │                      │
++  │                        │                        │                      │
++  │                        │ 组装 context:          │                      │
++  │                        │  system_prompt         │                      │
++  │                        │  + index.md (5%)        │                      │
++  │                        │  + 检索页面 (50%)       │                      │
++  │                        │  + 对话历史             │                      │
++  │                        │  + 用户问题             │                      │
++  │                        ├──────────────────────────────────────────────>│
++  │                        │                        │    streamChat()       │
++  │<── 流式显示 ──────────┤                        │                      │
++```
++
++### 4.3 深度研究 (Deep Research) 时序
++
++```
++触发 (Graph Insights "Research" 按钮 or 手动)
++  │
++  ├─ optimizeResearchTopic() ─── LLM 生成精准搜索主题 + 3 个搜索查询
++  │
++  ├─ queueResearch() ─── 加入队列，最多 3 个并发
++  │
++  └─ executeResearch():
++       │
++       ├─ Step 1: Searching
++       │   └─ webSearch() × N 个查询 → 合并 + URL 去重
++       │       (Tavily / SerpApi / SearXNG / Ollama)
++       │
++       ├─ Step 2: Synthesizing
++       │   └─ streamChat() ─── LLM 合成搜索结果
++       │
++       └─ Step 3: Saving
++           ├─ writeFile(wiki/queries/research-{slug}-{date}.md)
++           ├─ 刷新 file tree
++           └─ autoIngest() ─── 对研究成果再做摄入
++```
++
++### 4.4 知识图谱构建时序
++
++```
++用户切换到 Graph 视图
++  │
++  ├─ buildRetrievalGraph()
++  │   ├─ 遍历 wiki/*.md → 提取 frontmatter + wikilink
++  │   └─ 返回 RetrievalGraph (nodes + edges)
++  │
++  ├─ buildWikiGraph()
++  │   ├─ 4-signal 相关性计算 → 边权重
++  │   └─ 类型映射 → 颜色
++  │
++  ├─ computeLouvainCommunities() ─── 12 色聚类
++  │
++  ├─ computeCohesionScores() ─── 边密度
++  │
++  ├─ findSurprisingConnections() ─── 跨社区/跨类型/边缘→中枢
++  │
++  ├─ findKnowledgeGaps()
++  │   ├─ isolated nodes (degree ≤ 1)
++  │   ├─ sparse communities (cohesion < 0.15)
++  │   └─ bridge nodes (连接 ≥3 个社区)
++  │
++  └─ ForceAtlas2 layout → sigma.js 渲染
++```
++
++### 4.5 文件同步 (Source Watch) 时序
++
++```
++Rust 后端
++  │
++  ├─ start_project_file_watcher() ─── notify::RecommendedWatcher
++  │
++  ├─ 初始快照: MD5 hash → file-snapshot.json
++  │
++  └─ 事件循环:
++       ├─ Created → hash → 入队 FileChangeTask
++       ├─ Modified → 比较 hash → 若变更入队
++       ├─ Deleted → 入队删除任务
++       └─ Tauri Event 通知前端 → 触发 ingest/delete
++```
++
++---
++
++## 五、Rust 后端核心模块
++
++| 文件 | 职责 |
++|------|------|
++| [fs.rs](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src-tauri/src/commands/fs.rs) | 文件 CRUD、预处理（PDF/Word/Excel→Markdown）、文件树遍历 |
++| [search.rs](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src-tauri/src/commands/search.rs) | **混合搜索引擎**：BM25 + 向量 + RRF + 图片引用提取 |
++| [vectorstore.rs](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src-tauri/src/commands/vectorstore.rs) | **LanceDB 向量存储**：v1(per-page) + v2(per-chunk) 两套表 |
++| [file_sync.rs](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src-tauri/src/commands/file_sync.rs) | **文件系统监听**：notify watcher、MD5 快照、变更队列 |
++| [claude_cli.rs](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src-tauri/src/commands/claude_cli.rs) / [codex_cli.rs](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src-tauri/src/commands/codex_cli.rs) | CLI 子进程传输 |
++| [extract_images.rs](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src-tauri/src/commands/extract_images.rs) | pdfium 从 PDF/Office 提取嵌入图片 |
++| [api_server.rs](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src-tauri/src/api_server.rs) | 内置 HTTP API (`127.0.0.1:19828`)：搜索/文件读取/图谱遍历/源重扫描 |
++
++API Server 特性：
++- Token 保护（随机生成，存储在 `.llm-wiki/api-token`）
++- 限流：120 req/s，64 并发
++- 可搭配 [llm_wiki_skill](https://github.com/nashsu/llm_wiki_skill) 安装到 Claude Code / Codex
++
++---
++
++## 六、关键设计亮点
++
++### 6.1 安全路径校验
++
++[ingest.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/ingest.ts) 的 `isSafeIngestPath()` 对 LLM 生成的路径做严格校验：
++- 拒绝绝对路径、`..` 穿越、Windows 盘符
++- 拒绝 Windows 保留设备名（CON, PRN, NUL, COM1-9, LPT1-9）
++- 只允许 `wiki/` 子目录写入
++- 防止 prompt injection 攻击
++
++### 6.2 Enrich Wikilinks 的安全设计
++
++[enrich-wikilinks.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/enrich-wikilinks.ts) 采用防御性设计：
++- v1：让 LLM 返回完整页面 → 模型趁机改写内容
++- v2：LLM 只返回 `{term, target}` JSON → 代码做精确字符串替换，**页面其他内容完全不变**
++
++### 6.3 摄入队列的项目隔离
++
++[ingest-queue.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/ingest-queue.ts) 的 stale context guard：
++- 切换项目时，运行中的 ingestion 检测到 projectId 不匹配 → 立即中止
++- 防止旧项目 LLM 输出写入新项目
++
++### 6.4 嵌入自动降级
++
++[embedding.ts](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/lib/embedding.ts) 检测「输入过长」错误 → 自动将文本减半重试
++
++---
++
++## 七、使用方法
++
++### 7.1 开发启动
++
++```bash
++npm install          # 安装前端依赖
++npm run tauri dev    # 开发模式启动
++npm run tauri build  # 生产构建
++```
++
++### 7.2 创建 Wiki 项目
++
++1. 启动应用 → 选择「新建项目」
++2. 选择场景模板（Research / Reading / Personal Growth / Business / General）
++3. 指定项目路径 → 创建
++
++### 7.3 配置 LLM
++
++在 **Settings → LLM Provider** 中配置：
++- Provider: OpenAI / Anthropic / Google / Azure / Ollama / Custom / MiniMax / Claude Code CLI / Codex CLI
++- API Key / Endpoint / Model / Max Context Size
++- Reasoning 模式 (针对 DeepSeek-R1 等推理模型)
++
++### 7.4 添加源文档
++
++| 方式 | 说明 |
++|------|------|
++| 拖拽 | PDF/Word/Markdown/HTML 文件到 Sources 区域 |
++| 文件夹导入 | 保留目录结构，文件夹路径作为 LLM 分类上下文 |
++| Chrome 扩展 | 一键网页剪藏（`extension/` 目录） |
++| 直接放入 raw/sources/ | 自动检测并摄入 |
++
++### 7.5 核心操作
++
++| 操作 | 入口 | 说明 |
++|------|------|------|
++| **Ingest** | 拖入文件 / Sources 视图 | LLM 两步分析+生成 Wiki 页面 |
++| **Chat Query** | 中心对话区 | 基于检索的问答，引用具体页面 |
++| **Knowledge Graph** | 左侧 Graph 图标 | 可视化浏览知识关联、社区结构 |
++| **Graph Insights** | Graph 视图顶部 | 意外连接、知识缺口、桥梁节点 |
++| **Deep Research** | Graph Insights / 手动 | 多 Web 搜索 → LLM 合成 → 自动摄入 |
++| **Lint** | 左侧 Lint 图标 | Wiki 质量检查 |
++| **Review** | 左侧 Review 图标 | 处理 LLM 标记的矛盾/建议 |
++| **Search** | 左侧 Search 图标 | 全文搜索（含图片引用搜索） |
++
++### 7.6 向量搜索配置（可选）
++
++在 **Settings → Embedding** 中启用，配置 embedding endpoint（支持任何 OpenAI-compatible 接口），可调 chunk 参数。
++
++### 7.7 外部集成
++
++- **本地 HTTP API**: `127.0.0.1:19828`，Token 查看：Settings → API Server
++- **Agent Skill**: `npx skills add nashsu/llm_wiki_skill`
++- **Obsidian 兼容**: Wiki 目录本身就是标准 Obsidian Vault
++
++---
++
++## 八、总结
++
++LLM Wiki 的核心价值在于将 LLM 从「每次重新推理」的 RAG 模式转变为「增量构建持久知识库」的模式。其代码架构清晰地体现了这一理念：
++
++- **前端**负责 UI 交互、状态管理、图形可视化和 LLM 对话编排
++- **Rust 后端**负责文件系统操作、向量存储、搜索引擎、文件监听等高性能/系统级任务
++- **摄入引擎**是最复杂的核心模块，使用两步 CoT + 持久化队列 + 增量缓存 + 安全校验
++- **知识图谱**使用 4 信号相关性模型 + Louvain 社区检测 + 图洞察
++
++## User
++具体如何使用，给出对应的命令
++
++## Assistant
++让我查看项目的具体配置和构建命令，给出详细的使用说明。
++
++现在我有足够的信息来给出完整的具体使用命令了。
++
++---
++
++# LLM Wiki 具体使用方法与命令
++
++## 一、开发与构建命令
++
++所有命令均在 `llm_wiki/` 目录下执行：
++
++```bash
++# 进入项目目录
++cd d:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki
++
++# 安装前端依赖
++npm install
++
++# 开发模式启动（同时启动 Vite 前端 + Tauri Rust 后端）
++npm run tauri dev
++
++# 仅启动 Vite 前端（不含 Rust 后端，用于纯前端调试）
++npm run dev
++
++# TypeScript 类型检查
++npm run typecheck
++
++# 生产构建（typecheck + vite build + Rust 编译 → 生成安装包）
++npm run tauri build
++
++# 仅构建前端（不编译 Rust）
++npm run build
++```
++
++## 二、测试命令
++
++```bash
++# 运行所有测试（mock 测试 + 真实 LLM 测试）
++npm run test
++
++# 仅运行 mock 测试（排除需要真实 LLM API 的测试）
++npm run test:mocks
++
++# 运行真实 LLM API 测试（需要配置 .env.test.local）
++npm run test:llm
++
++# 运行单个测试文件
++npx vitest run src/lib/ingest.test.ts
++
++# 运行测试并监视文件变化
++npx vitest watch
++```
++
++## 三、应用内操作（GUI）
++
++启动应用后 (`npm run tauri dev`)，以下是具体的操作流程：
++
++### 3.1 创建项目
++
++1. 启动应用 → 看到 **WelcomeScreen**
++2. 点击 **"New Project"** → 弹出 **CreateProjectDialog**
++3. 选择场景模板：
++   - 🔬 Research — 研究深挖 + 假设追踪
++   - 📖 Reading — 阅读笔记 + 文摘
++   - 🌱 Personal Growth — 个人发展 + 反思
++   - 💼 Business — 商业分析 + 决策记录
++   - 📋 General — 通用知识库
++4. 输入项目名称，选择存储路径 → 点击创建
++5. 项目目录结构自动生成：
++   ```
++   my-project/
++   ├── purpose.md       ← 根据模板预设
++   ├── schema.md        ← 根据模板预设
++   ├── raw/sources/     ← 放入你的文档
++   ├── wiki/
++   │   ├── index.md
++   │   ├── log.md
++   │   ├── overview.md
++   │   ├── entities/
++   │   ├── concepts/
++   │   ├── sources/
++   │   ├── queries/
++   │   └── synthesis/
++   └── .llm-wiki/
++       └── project.json  ← 项目 UUID
++   ```
++
++### 3.2 配置 LLM Provider
++
++点击左侧 **⚙️ Settings** → **LLM Provider** 区域：
++
++| Provider | 必填字段 | 示例 |
++|----------|----------|------|
++| OpenAI | API Key, Model | `sk-xxx`, `gpt-4o` |
++| Anthropic | API Key, Model | `sk-ant-xxx`, `claude-sonnet-4-20250514` |
++| Google | API Key, Model | `xxx`, `gemini-2.5-pro` |
++| Azure OpenAI | API Key, API Version, Endpoint, Model | `xxx`, `2024-02-15-preview` |
++| Ollama | Ollama URL, Model | `http://127.0.0.1:11434`, `llama3` |
++| Custom | Custom Endpoint, API Key, Model, API Mode | `http://localhost:1234/v1`, `local-model` |
++| MiniMax | API Key, Model | `xxx`, `MiniMax-M2.7-highspeed` |
++| Claude Code CLI | 无需 Key（本地 `claude` 二进制） | 自动检测 PATH |
++| Codex CLI | 无需 Key（本地 `codex` 二进制） | 自动检测 PATH |
++
++同时设置 **Max Context Size**（字符数，如 `128000`、`204800`）和可选的 **Reasoning 模式**。
++
++### 3.3 导入文档 (Ingest)
++
++有多种方式将源文档导入：
++
++**方式 1：拖拽文件**
++- 在 Sources 视图中，直接将 PDF/Word/Markdown/HTML 文件拖入
++- 每个文件自动进入摄入队列，Activity Panel 显示进度
++
++**方式 2：文件夹导入**
++- 点击 Sources 视图中的 **"Import Folder"** 按钮
++- 选择包含文档的文件夹 → 递归导入，保留目录结构
++- 文件夹路径（如 `papers > energy`）作为分类上下文传给 LLM
++
++**方式 3：直接放入 raw/sources/ 目录**
++- 在项目文件夹的 `raw/sources/` 中手动添加文件
++- 应用自动检测（Rust `notify` watcher + MD5 快照对比）
++- 新增文件 → 自动触发摄入队列
++- 删除文件 → 自动触发 Wiki 清理
++
++**方式 4：Chrome 扩展网页剪藏**
++- 在 Chrome 中加载 `extension/` 目录（开发者模式）
++- 点击扩展图标 → 一键捕获当前网页 → Markdown 转换 → 发送到 `127.0.0.1:19827` Clip Server
++- 应用自动接收并触发摄入
++
++### 3.4 聊天查询 (Chat Query)
++
++1. 点击左侧 **💬 Chat** 图标
++2. 在中心对话区输入问题
++3. 系统自动执行：
++   - BM25 分词搜索 + 可选向量搜索 + RRF 融合
++   - 构建 Retrieval Graph → 扩展相关节点
++   - 按上下文预算分配空间
++   - 流式输出 LLM 回答，引用具体 Wiki 页面
++4. 回答下方显示 **SourceFilesBar** — 点击可跳转到引用的 Wiki 页面
++
++### 3.5 知识图谱浏览
++
++1. 点击左侧 **🔗 Graph** 图标
++2. 自动构建并渲染知识图谱（ForceAtlas2 布局）
++3. 操作：
++   - **悬停节点** → 非邻居变暗，边高亮显示关联度分数
++   - **缩放控件** → ZoomIn / ZoomOut / Fit-to-screen
++   - **颜色切换** → 按页面类型 (entity/concept/source...) 或按社区 (Louvain)
++   - **搜索/过滤** → 按名称或类型筛选节点
++
++### 3.6 图洞察 (Graph Insights)
++
++在 Graph 视图顶部点击 **"Insights"**：
++
++- **惊奇连接** → 跨社区/跨类型的意外关联，可标记为已审阅
++- **知识缺口** → 孤立页面、松散社区、桥梁节点
++- 每个缺口右侧有 **"Deep Research"** 按钮 → 点击后：
++  1. 弹出确认对话框（可编辑研究主题和搜索查询）
++  2. 启动深度研究 → Web 搜索 → LLM 合成 → 写入 Wiki
++
++### 3.7 配置向量搜索 (Embedding)
++
++在 **Settings → Embedding** 区域：
++
++1. **启用向量搜索** → 勾选 `enabled`
++2. 配置：
++   - **Endpoint**: 如 `http://127.0.0.1:1234/v1/embeddings`
++   - **API Key**: 如 `sk-xxx`（本地模型可留空）
++   - **Model**: 如 `text-embedding-3-small`
++   - **Output Dimensionality**: 可选（Gemini 原生嵌入维度）
++3. 可调 Chunk 参数：
++   - `maxChunkChars` — 单 chunk 最大字符数（默认 1500）
++   - `overlapChunkChars` — 重叠字符数（默认 200）
++4. 保存 → 新摄入的页面自动嵌入，搜索自动融合向量结果
++
++### 3.8 配置 Web 搜索 (用于 Deep Research)
++
++在 **Settings → Web Search** 区域：
++
++| Provider | 配置 |
++|----------|------|
++| Tavily | API Key（从 tavily.com 获取） |
++| SerpApi | API Key + Engine 选择 (Google/Scholar/News/Patents/Bing/YouTube 等) |
++| SearXNG | 自托管实例 URL（如 `http://localhost:8080`） |
++| Ollama | Ollama API Key |
++| None | 禁用 Web 搜索 |
++
++### 3.9 审阅系统 (Review)
++
++1. LLM 在摄入时可能生成 **Review 块**（矛盾、重复、建议等）
++2. 点击左侧 **📋 Review** 图标查看待审阅项
++3. 每项显示：类型、标题、描述、涉及页面、搜索查询
++4. 操作选项：
++   - **Create Page** → LLM 创建相关页面
++   - **Skip** → 忽略此建议
++   - **Deep Research** → 自动触发 Web 搜索深入研究
++
++### 3.10 Lint 检查
++
++点击左侧 **🔍 Lint** 图标 → 显示 Wiki 质量检查结果：
++- 孤立页面（无 wikilink 连接）
++- 断链（引用了不存在的页面）
++- 缺少 frontmatter 的页面
++
++## 四、本地 HTTP API 使用
++
++应用启动后自动在 `127.0.0.1:19828` 提供 JSON API。
++
++### 4.1 获取 API Token
++
++1. 打开 **Settings → API Server**
++2. 复制显示的 Token（或从 `.llm-wiki/api-token` 文件读取）
++
++### 4.2 API 端点一览
++
++```bash
++# 健康检查（无需 Token）
++curl http://127.0.0.1:19828/health
++
++# 获取项目列表
++curl -H "Authorization: Bearer <TOKEN>" \
++  http://127.0.0.1:19828/api/v1/projects
++
++# 获取项目文件列表
++curl -H "Authorization: Bearer <TOKEN>" \
++  "http://127.0.0.1:19828/api/v1/projects/<PROJECT_ID>/files"
++
++# 获取文件内容
++curl -H "Authorization: Bearer <TOKEN>" \
++  "http://127.0.0.1:19828/api/v1/projects/<PROJECT_ID>/files/content?path=wiki/entities/transformer.md"
++
++# 搜索
++curl -X POST -H "Authorization: Bearer <TOKEN>" \
++  -H "Content-Type: application/json" \
++  -d '{"query": "attention mechanism", "topK": 10}' \
++  http://127.0.0.1:19828/api/v1/projects/<PROJECT_ID>/search
++
++# 知识图谱查询（支持过滤）
++curl -H "Authorization: Bearer <TOKEN>" \
++  "http://127.0.0.1:19828/api/v1/projects/<PROJECT_ID>/graph?nodeType=entity&limit=200"
++
++# 重新扫描源文件
++curl -X POST -H "Authorization: Bearer <TOKEN>" \
++  http://127.0.0.1:19828/api/v1/projects/<PROJECT_ID>/sources/rescan
++```
++
++### 4.3 安装 AI Agent Skill（接入 Claude Code / Codex）
++
++```bash
++# 一行命令安装 skill
++npx skills add nashsu/llm_wiki_skill
++```
++
++安装后，Claude Code / Codex 可直接通过 skill 调用 LLM Wiki 的 API 进行搜索、读取文件、图谱遍历等。
++
++## 五、Chrome 扩展安装
++
++```bash
++# 1. 打开 Chrome → 扩展管理 → 开启开发者模式
++# 2. 点击 "加载已解压的扩展程序"
++# 3. 选择目录: d:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\extension
++# 4. 扩展安装完成 → 工具栏出现 LLM Wiki Clipper 图标
++```
++
++使用时：
++1. 确保应用正在运行（Clip Server 在 `127.0.0.1:19827`）
++2. 浏览任意网页 → 点击扩展图标 → 自动提取内容 → 发送到应用 → 触发摄入
++
++## 六、Obsidian 互通
++
++```bash
++# 1. 打开 Obsidian → "Open folder as vault"
++# 2. 选择项目的 wiki/ 子目录
++#    如: d:\my-project\wiki
++# 3. Obsidian 直接识别:
++#    - Markdown 文件
++#    - [[wikilink]] 交叉引用
++#    - YAML frontmatter
++#    - 目录结构
++```
++
++可以在 Obsidian 中手动编辑 Wiki 页面，LLM Wiki 应用会检测变更并保持同步。
++
++## 七、常用开发调试命令汇总
++
++```bash
++# 进入项目目录
++cd d:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki
++
++# 安装依赖
++npm install
++
++# 开发模式（Vite 前端 + Tauri 后端同时启动）
++npm run tauri dev
++
++# 仅前端开发服务器（端口 1420）
++npm run dev
++
++# TypeScript 类型检查
++npm run typecheck
++
++# 运行 mock 测试
++npm run test:mocks
++
++# 运行真实 LLM 测试（需配置 .env.test.local）
++npm run test:llm
++
++# 运行所有测试
++npm run test
++
++# 生产构建（生成安装包）
++npm run tauri build
++
++# 仅构建前端
++npm run build
++
++# 前端构建产物预览
++npm run preview
++
++# Tauri CLI 子命令
++npm run tauri -- --help    # 查看所有 Tauri 命令
++```
++
++## User
++npm run build 
++  
++ > llm-wiki@0.4.13 build 
++ > npm run typecheck && vite build 
++  
++  
++ > llm-wiki@0.4.13 typecheck 
++ > tsc --build --pretty 
++  
++ vite v8.0.3 building client environment for production... 
++ transforming (3883) node_modules\dagre-d3-es\src\dagre\order\barycenter.js 
++ warn - The `content` option in your Tailwind CSS configuration is missing or empty. 
++ warn - Configure your content sources or your generated CSS will be missing styles. 
++ warn - `https://tailwindcss.com/docs/content-configuration`  
++ ✓ 4246 modules transformed. 
++ ✗ Build failed in 1.46s 
++ error during build: 
++ Build failed with 2 errors: 
++  
++ [plugin vite:css] D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/index.css:2:5901 
++ CssSyntaxError: [postcss] D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/src/index.css:2:5902: `@layer base` is used but no matching `@tailwind base` directive is present. 
++     at Input.error (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\input.js:135:16) 
++     at AtRule.error (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\node.js:146:32) 
++     at normalizeTailwindDirectives (D:\dongxiaohan\Code\one-stop-desktop-tool\node_modules\tailwindcss\lib\lib\normalizeTailwindDirectives.js:72:32) 
++     at D:\dongxiaohan\Code\one-stop-desktop-tool\node_modules\tailwindcss\lib\processTailwindFeatures.js:29:98 
++     at plugins (D:\dongxiaohan\Code\one-stop-desktop-tool\node_modules\tailwindcss\lib\plugin.js:38:69)  
++     at LazyResult.runOnRoot (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\lazy-result.js:361:16) 
++     at LazyResult.runAsync (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\lazy-result.js:290:26) 
++     at LazyResult.async (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\lazy-result.js:192:30) 
++     at LazyResult.then (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\lazy-result.js:436:17) 
++ [plugin vite:css] D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/node_modules/@milkdown/theme-nord/lib/style.css:71:0 
++ CssSyntaxError: [postcss] D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/node_modules/@milkdown/theme-nord/lib/style.css:71:1: `@layer base` is used but no matching `@tailwind base` directive is present. 
++     at Input.error (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\input.js:135:16) 
++     at AtRule.error (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\node.js:146:32) 
++     at normalizeTailwindDirectives (D:\dongxiaohan\Code\one-stop-desktop-tool\node_modules\tailwindcss\lib\lib\normalizeTailwindDirectives.js:72:32) 
++     at D:\dongxiaohan\Code\one-stop-desktop-tool\node_modules\tailwindcss\lib\processTailwindFeatures.js:29:98 
++     at plugins (D:\dongxiaohan\Code\one-stop-desktop-tool\node_modules\tailwindcss\lib\plugin.js:38:69)  
++     at LazyResult.runOnRoot (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\lazy-result.js:361:16) 
++     at LazyResult.runAsync (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\lazy-result.js:290:26) 
++     at LazyResult.async (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\lazy-result.js:192:30) 
++     at LazyResult.then (D:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki\node_modules\postcss\lib\lazy-result.js:436:17) 
++     at aggregateBindingErrorsIntoJsError (file:///D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/node_modules/rolldown/dist/shared/error-BLhcSyeg.mjs:48:18) 
++     at unwrapBindingResult (file:///D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/node_modules/rolldown/dist/shared/error-BLhcSyeg.mjs:18:128) 
++     at #build (file:///D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/node_modules/rolldown/dist/shared/rolldown-build-CPrIX9V6.mjs:3313:34) 
++     at async buildEnvironment (file:///D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/node_modules/vite/dist/node/chunks/node.js:32849:64) 
++     at async Object.build (file:///D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/node_modules/vite/dist/node/chunks/node.js:33271:19) 
++     at async Object.buildApp (file:///D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/node_modules/vite/dist/node/chunks/node.js:33268:153) 
++     at async CAC.<anonymous> (file:///D:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/node_modules/vite/dist/node/cli.js:778:3) { 
++   errors: [Getter/Setter] 
++ }
++
++## Assistant
++找到了根本原因！问题不是代码错误，而是 **npm 包版本冲突**：
++
++**诊断结果**：
++
++1. 父项目 `one-stop-desktop-tool/package.json` 使用 **Tailwind CSS v3.4.14**（PostCSS 方式）
++2. `llm_wiki/package.json` 使用 **Tailwind CSS v4.2.2**（Vite plugin 方式）
++3. 父目录存在 [postcss.config.js](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/postcss.config.js)，配置了 v3 的 `tailwindcss` PostCSS 插件
++4. Vite 在处理 CSS 时向上查找，发现了父目录的 PostCSS 配置 → 用 v3 的 PostCSS 管道处理 v4 的 CSS → 报错
++
++**具体原因**：Tailwind v4 的 `@import "tailwindcss"` 语法和 `@layer base {}` 在 v3 的 PostCSS 管道中不被识别，v3 要求使用 `@tailwind base; @tailwind components; @tailwind utilities;` 指令。
++
++**修复方案**：在 `llm_wiki/` 目录下添加一个空的 `postcss.config.mjs`，覆盖父目录的 v3 PostCSS 配置。Tailwind v4 + `@tailwindcss/vite` 不需要 PostCSS 插件。
++
++构建成功了！
++
++构建已成功通过！`npm run build` 输出了完整的构建产物。
++
++**问题总结与修复说明**：
++
++### 根本原因
++
++父项目 `one-stop-desktop-tool/` 使用的是 **Tailwind CSS v3.4.14**（PostCSS 模式），目录下有一个 [postcss.config.js](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/postcss.config.js)：
++
++```js
++module.exports = {
++  plugins: {
++    tailwindcss: {},    // ← 这是 v3 的 PostCSS 插件
++    autoprefixer: {},
++  },
++}
++```
++
++而 `llm_wiki/` 项目使用的是 **Tailwind CSS v4.2.2**（Vite plugin 模式），使用 `@import "tailwindcss"` 和 `@layer base {}` 语法。
++
++Vite 在处理 CSS 时会向上遍历目录查找 PostCSS 配置，发现了父目录的 v3 PostCSS 配置 → 用 v3 的 PostCSS 管道处理 v4 的 CSS → v3 不认识 `@import "tailwindcss"` 和 `@layer base {}` → 报错。
++
++### 修复方法
++
++在 `llm_wiki/` 目录下创建了 [postcss.config.mjs](file:///d:/dongxiaohan/Code/one-stop-desktop-tool/knowledge_management/llm_wiki/postcss.config.mjs)，内容为空的配置对象：
++
++```js
++export default {}
++```
++
++这样做的作用：
++- **覆盖父目录的 PostCSS 配置**：Vite 找到本目录的配置后不再继续向上查找
++- **Tailwind v4 + `@tailwindcss/vite` 不需要 PostCSS 插件**：v4 的 Vite plugin 直接处理 CSS，不需要 v3 的 PostCSS 管道
++- **不影响父项目**：父项目仍然使用自己的 `postcss.config.js`（v3 配置）
++
++## User
++npm install 
++ 
++ up to date, audited 805 packages in 7s 
++ 
++ 247 packages are looking for funding 
++   run `npm fund` for details 
++ 
++ 11 vulnerabilities (9 moderate, 2 high) 
++ 
++ To address all issues, run: 
++   npm audit fix 
++ 
++ Run `npm audit` for details
++
++## Assistant
++`npm install` 显示有 11 个安全漏洞（9 moderate, 2 high）。让我看看具体是什么问题。
++
++`npm audit fix` 执行成功，所有 11 个漏洞已修复：
++
++```
++found 0 vulnerabilities
++```
++
++以下是修复的漏洞总结：
++
++| 漏洞 | 严重性 | 修复方式 |
++|------|--------|----------|
++| **vite** (路径遍历、文件读取、fs.deny 绕过) | **high** | 升级到安全版本 |
++| **fast-uri** (路径遍历、host 混淆) | **high** | 升级到安全版本 |
++| **dompurify** (XSS 绕过) | moderate | 升级到 3.3.3+ |
++| **hono** (多种 cookie/XSS/路径遍历问题) | moderate | 升级到安全版本 |
++| **mermaid** (DoS/CSS 注入) | moderate | 升级到安全版本 |
++| **postcss** (XSS) | moderate | 升级到 8.5.10+ |
++| **brace-expansion** (DoS) | moderate | 升级到安全版本 |
++| **qs** (DoS) | moderate | 升级到安全版本 |
++| **ip-address** (XSS) | moderate | 升级到安全版本 |
++
++现在项目处于零漏洞状态。不过 `npm audit fix` 会修改 `package.json` 的版本范围，建议你确认构建仍然正常：
++
++```bash
++Set-Location d:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki; npm run build
++```
++
++如需回滚任何不兼容的版本变更，可以检查 `package.json` 的 diff。
++
++## User
++Terminal#400-408
++
++## Assistant
++这个错误很直接 — **系统上没有安装 Rust 的 `cargo` 命令**。Tauri 的后端是用 Rust 写的，必须先安装 Rust 工具链。
++
++先确认一下是否已有 Rust 但未加入 PATH：
++
++确认了 — Rust 没有安装。需要在你的 Windows 系统上安装 Rust 工具链。
++
++### 安装步骤
++
++**1. 安装 Rust**
++
++打开 PowerShell（管理员不是必须的），运行：
++
++```powershell
++winget install Rustlang.Rustup
++```
++
++如果没有 `winget`，或者想用官方安装方式，从官网下载安装器：
++
++[https://rustup.rs/](https://rustup.rs/) — 下载 `rustup-init.exe`，双击运行，按默认选项安装即可。
++
++**2. 安装完成后，重新打开终端确认：**
++
++```powershell
++cargo --version
++rustc --version
++```
++
++应输出类似：
++```
++cargo 1.85.0
++rustc 1.85.0
++```
++
++**3. 再次启动 llm_wiki 开发模式：**
++
++```powershell
++cd d:\dongxiaohan\Code\one-stop-desktop-tool\knowledge_management\llm_wiki
++npm run tauri dev
++```
++
++首次运行 `tauri dev` 时，Cargo 会自动下载并编译 Rust 依赖（LanceDB、pdfium、notify 等），这一步会花一些时间，后续编译就有缓存了。
++
++## User
++Terminal#411-418
++
++## Assistant
++这个环境中也没有 `winget`。换一种方式安装 Rust：
++
++### 方案一：直接下载官方安装器（推荐）
++
++用浏览器打开以下链接下载 `rustup-init.exe`：
++
++**https://rustup.rs/**
++
++下载后双击运行，在弹出的命令行窗口中按默认选项（选 `1` 即可）完成安装。
++
++### 方案二：使用 PowerShell 直接下载安装
++
++```powershell
++Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile "$env:TEMP\rustup-init.exe"
++& "$env:TEMP\rustup-init.exe" -y
++```
++
++- `-y` 表示使用默认配置，无需交互
++- 安装完成后 **关闭当前终端，重新打开一个新的终端**，Rust 才会生效
++
++### 方案三：Chocolatey（如果装了的话）
++
++```powershell
++choco install rust
++```
++
++---
++
++安装完成后，在新终端中验证：
++
++```powershell
++cargo --version
++```
++
++看到版本号输出就说明安装成功了，然后就能运行 `npm run tauri dev`。
++
++## User
++cargo是什么
++
++## Assistant
++**Cargo** 是 Rust 语言的**官方包管理器和构建工具**，你可以把它理解为 Rust 生态中的 `npm` + 构建系统。
++
++### 类比对照
++
++| 功能 | JavaScript 生态 | Rust 生态 |
++|------|----------------|-----------|
++| 包管理器 | `npm` | `cargo` |
++| 依赖清单 | `package.json` | `Cargo.toml` |
++| 锁文件 | `package-lock.json` | `Cargo.lock` |
++| 安装依赖 | `npm install` | `cargo build`（自动下载） |
++| 运行项目 | `npm run dev` | `cargo run` |
++| 编译构建 | `npm run build` | `cargo build --release` |
++| 编译器 | TypeScript → `tsc` | Rust → `rustc` |
++
++### 在这个项目中的作用
++
++LLM Wiki 使用 **Tauri v2** 框架，架构分两层：
++
++- **前端**：`npm` 管理的 TypeScript/React/Vite → 你之前 `npm run build` 构建的就是这部分
++- **后端**：`cargo` 管理的 Rust 代码 (`src-tauri/` 目录) → 负责文件系统操作、向量数据库 (LanceDB)、搜索引擎、PDF 解析等底层功能
++
++运行 `npm run tauri dev` 时，Tauri CLI 会调用 `cargo` 来编译 Rust 后端代码，所以你看到的错误 `cargo metadata: program not found` 就是因为系统上没有安装 Rust/Cargo。
++
++### 一句话总结
++
++> **Cargo = Rust 的 npm**，没有它就无法编译 LLM Wiki 的 Rust 后端，`npm run tauri dev` 会失败。
++
++## User
++npm是什么
++
++## Assistant
++**npm**（Node Package Manager）是 Node.js 的**默认包管理器和命令行工具**，用来管理 JavaScript 项目的依赖和脚本。
++
++### 简单理解
++
++```
++npm ≈ 应用商店 + 自动安装工具  (专门给 JavaScript/TypeScript 项目用)
++```
++
++### 它做三件事
++
++| 功能 | 命令 | 说明 |
++|------|------|------|
++| **装依赖** | `npm install` | 读取 `package.json`，把一个项目需要的所有第三方库下载到 `node_modules/` |
++| **跑脚本** | `npm run xxx` | 执行 `package.json` 里 `scripts` 字段定义的命令 |
++| **装新包** | `npm install <包名>` | 从 npm 仓库（npmjs.com）下载一个库 |
++
++### 在这个项目中的实际使用
++
++你之前运行的命令就是典型用法：
++
++```bash
++# 安装项目所有依赖（React、Tailwind、Milkdown 等 60+ 个库）
++npm install
++
++# 跑构建脚本 —— 等价于执行 package.json 里 "build": "npm run typecheck && vite build"
++npm run build
++
++# 跑 Tauri 开发服务器
++npm run tauri dev
++```
++
++### 类比
++
++| 概念 | iOS/Android | JavaScript (npm) | Rust |
++|------|-------------|-----------------|------|
++| 包管理器 | **App Store** | **npm** | **cargo** |
++| 装依赖 | 点击"获取" | `npm install` | `cargo build` |
++| 包仓库 | Apple/Google 服务器 | npmjs.com | crates.io |
++
++### 一句话
++
++> **npm 是 JavaScript 世界的「应用商店 + 一键安装工具」**，你运行的所有 `npm run xxx` 命令本质上都是在让 npm 帮你执行预定义好的任务。
++
++## User
++npm、cargo、pip的异同
++
++## Assistant
++三者的核心相同点：**它们都是包管理器** — 用来下载、安装、管理第三方库和依赖。
++
++### 一览表
++
++| | **npm** | **cargo** | **pip** |
++|---|---|---|---|
++| **语言** | JavaScript / TypeScript | Rust | Python |
++| **包仓库** | npmjs.com | crates.io | pypi.org |
++| **依赖文件** | `package.json` | `Cargo.toml` | `pyproject.toml` / `requirements.txt` |
++| **锁文件** | `package-lock.json` | `Cargo.lock` | `poetry.lock` / `pip freeze` |
++| **安装** | `npm install` | `cargo build`（自动） | `pip install` |
++| **安装目录** | `node_modules/` | 全局缓存 `~/.cargo/` | 虚拟环境 `venv/` |
++| **装新包** | `npm install <包名>` | `cargo add <包名>` | `pip install <包名>` |
++| **卸载包** | `npm uninstall <包名>` | `cargo remove <包名>` | `pip uninstall <包名>` |
++| **运行脚本** | `npm run <脚本>` | `cargo run` | 无内置，用 `make`/`poetry run` |
++| **发布包** | `npm publish` | `cargo publish` | `pip publish`（twine） |
++
++### 关键差异
++
++**1. 构建能力**
++- **cargo** 最强大 — 不仅管依赖，还管编译、测试、文档生成、发布，一站式工具
++- **npm** 管依赖 + 运行脚本，但构建靠其他工具（webpack/vite/tsc）
++- **pip** 只管安装卸载，构建、测试、脚本完全靠第三方（setuptools/poetry/pytest）
++
++**2. 依赖隔离**
++- **pip** 需要用虚拟环境（`venv`）才能隔离不同项目的依赖，否则全局污染
++- **npm** 自动把依赖装在项目的 `node_modules/` 下，天然隔离
++- **cargo** 全局缓存所有依赖，但按项目版本精确锁定，不会冲突
++
++**3. 速度和安全性**
++- **cargo** 最快 — Rust 二进制编译，零运行时开销
++- **npm** 中等 — 纯 JavaScript，不需要编译
++- **pip** 最慢 — Python 解释型，安装可能触发本地编译 C 扩展
++
++### 一句话总结
++
++| 工具 | 最擅长 |
++|------|--------|
++| **npm** | JavaScript/TypeScript 项目，生态最大（300万+ 包） |
++| **cargo** | Rust 项目，最省心（包管理 + 编译 + 测试全搞定） |
++| **pip** | Python 项目，最灵活但需要额外工具配合 |
++
+-- 
+2.54.0.windows.1
+

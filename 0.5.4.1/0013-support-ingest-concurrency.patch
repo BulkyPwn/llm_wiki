@@ -1,0 +1,278 @@
+From 48e0650648838fa6ba33a9bbe9d6556fa8e64108 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Thu, 2 Jul 2026 20:50:46 +0800
+Subject: [PATCH 13/15] support ingest concurrency
+
+---
+ src/App.tsx                                   | 15 +++++++++++++-
+ .../settings/sections/output-section.tsx      | 20 +++++++++++++++++++
+ src/components/settings/settings-types.ts     |  3 +++
+ src/components/settings/settings-view.tsx     |  9 +++++++++
+ src/i18n/en.json                              |  4 +++-
+ src/i18n/zh.json                              |  4 +++-
+ src/lib/project-store.ts                      | 12 +++++++++++
+ src/stores/wiki-store.ts                      |  7 +++++++
+ 8 files changed, 71 insertions(+), 3 deletions(-)
+
+diff --git a/src/App.tsx b/src/App.tsx
+index 422deda..562cd9b 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -10,7 +10,7 @@ import { useLintStore } from "@/stores/lint-store"
+ import { useChatStore } from "@/stores/chat-store"
+ import { BASE_FONT_SIZE_PX, useZoomStore } from "@/stores/zoom-store"
+ import { openProject } from "@/commands/fs"
+-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadZoomLevel } from "@/lib/project-store"
++import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadIngestConcurrency, loadZoomLevel } from "@/lib/project-store"
+ import { loadReviewItems, loadLintItems, loadChatHistory, loadChatPreferences } from "@/lib/persist"
+ import { setupAutoSave } from "@/lib/auto-save"
+ import { startClipWatcher } from "@/lib/clip-watcher"
+@@ -204,6 +204,7 @@ function App() {
+           loadMultimodalConfig,
+           loadProxyConfig,
+           loadApiConfig,
++          loadIngestConcurrency,
+         } = await import("@/lib/project-store")
+ 
+         // Reload the in-memory store from disk before reading any
+@@ -253,6 +254,10 @@ function App() {
+             token: savedApi.token ?? "",
+           })
+         }
++        const savedConcurrency = await loadIngestConcurrency()
++        if (savedConcurrency != null) {
++          useWikiStore.getState().setIngestConcurrency(savedConcurrency)
++        }
+         console.log("[API] Config reload complete")
+       } catch (err) {
+         console.error("[API] Config reload failed:", err)
+@@ -510,6 +515,14 @@ function App() {
+         }
+         const savedGeneral = await loadGeneralConfig()
+         useWikiStore.getState().setGeneralConfig(savedGeneral)
++        try {
++          const savedIngestConcurrency = await loadIngestConcurrency()
++          if (savedIngestConcurrency != null) {
++            useWikiStore.getState().setIngestConcurrency(savedIngestConcurrency)
++          }
++        } catch (err) {
++          console.warn("[startup] failed to load ingest concurrency:", err)
++        }
+         try {
+           await invoke<string>("set_close_behavior", { value: savedGeneral.closeBehavior })
+         } catch (err) {
+diff --git a/src/components/settings/sections/output-section.tsx b/src/components/settings/sections/output-section.tsx
+index 10be985..1d9ec7a 100644
+--- a/src/components/settings/sections/output-section.tsx
++++ b/src/components/settings/sections/output-section.tsx
+@@ -1,5 +1,6 @@
+ import { useTranslation } from "react-i18next"
+ import { Label } from "@/components/ui/label"
++import { Input } from "@/components/ui/input"
+ import type { SettingsDraft, DraftSetter } from "../settings-types"
+ import { OUTPUT_LANGUAGE_OPTIONS as LANGUAGE_OPTIONS } from "@/lib/output-language-options"
+ 
+@@ -70,6 +71,25 @@ export function OutputSection({ draft, setDraft }: Props) {
+           })}
+         </p>
+       </div>
++
++      <div className="space-y-2 rounded-md border p-3">
++        <Label>{t("settings.sections.output.ingestConcurrency")}</Label>
++        <Input
++          type="number"
++          min={1}
++          max={100}
++          step={1}
++          value={draft.ingestConcurrency}
++          onChange={(e) => {
++            const n = Number(e.target.value)
++            setDraft("ingestConcurrency", Number.isFinite(n) && n >= 1 ? n : 5)
++          }}
++          className="w-24"
++        />
++        <p className="text-xs text-muted-foreground">
++          {t("settings.sections.output.ingestConcurrencyHint")}
++        </p>
++      </div>
+     </div>
+   )
+ }
+diff --git a/src/components/settings/settings-types.ts b/src/components/settings/settings-types.ts
+index b574554..fd78006 100644
+--- a/src/components/settings/settings-types.ts
++++ b/src/components/settings/settings-types.ts
+@@ -49,6 +49,9 @@ export interface SettingsDraft {
+   multimodalApiMode: CustomApiMode | undefined
+   multimodalConcurrency: number
+ 
++  // Ingest
++  ingestConcurrency: number
++
+   // Output preferences
+   outputLanguage: string
+   maxHistoryMessages: number
+diff --git a/src/components/settings/settings-view.tsx b/src/components/settings/settings-view.tsx
+index f72f844..728230a 100644
+--- a/src/components/settings/settings-view.tsx
++++ b/src/components/settings/settings-view.tsx
+@@ -93,6 +93,7 @@ function initialDraft(
+   llm: ReturnType<typeof useWikiStore.getState>["llmConfig"],
+   embed: ReturnType<typeof useWikiStore.getState>["embeddingConfig"],
+   multimodal: ReturnType<typeof useWikiStore.getState>["multimodalConfig"],
++  ingestConcurrency: number,
+   outputLanguage: ReturnType<typeof useWikiStore.getState>["outputLanguage"],
+   proxy: ReturnType<typeof useWikiStore.getState>["proxyConfig"],
+   scheduledImport: ReturnType<typeof useWikiStore.getState>["scheduledImportConfig"],
+@@ -149,6 +150,7 @@ function initialDraft(
+     multimodalAzureModelFamily: multimodal.azureModelFamily ?? "auto",
+     multimodalApiMode: multimodal.apiMode,
+     multimodalConcurrency: multimodal.concurrency,
++    ingestConcurrency,
+     outputLanguage,
+     maxHistoryMessages,
+     proxyEnabled: proxy.enabled,
+@@ -197,6 +199,8 @@ export function SettingsView() {
+   const setApiConfig = useWikiStore((s) => s.setApiConfig)
+   const generalConfig = useWikiStore((s) => s.generalConfig)
+   const setGeneralConfig = useWikiStore((s) => s.setGeneralConfig)
++  const ingestConcurrency = useWikiStore((s) => s.ingestConcurrency)
++  const setIngestConcurrency = useWikiStore((s) => s.setIngestConcurrency)
+   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
+   const setMaxHistoryMessages = useChatStore((s) => s.setMaxHistoryMessages)
+   // Drives the red dot next to the "About" row in the settings
+@@ -218,6 +222,7 @@ export function SettingsView() {
+       llmConfig,
+       embeddingConfig,
+       multimodalConfig,
++      ingestConcurrency,
+       outputLanguage,
+       proxyConfig,
+       scheduledImportConfig,
+@@ -275,6 +280,7 @@ export function SettingsView() {
+         llmConfig,
+         embeddingConfig,
+         multimodalConfig,
++        ingestConcurrency,
+         outputLanguage,
+         proxyConfig,
+         scheduledImportConfig,
+@@ -335,6 +341,7 @@ export function SettingsView() {
+       loadApiConfig,
+       saveGeneralConfig,
+       loadGeneralConfig,
++      saveIngestConcurrency,
+       saveZoomLevel,
+       loadZoomLevel,
+     } = await import("@/lib/project-store")
+@@ -427,6 +434,7 @@ export function SettingsView() {
+     setMineruConfig(newMineruConfig)
+     setApiConfig(newApiConfig)
+     setGeneralConfig(newGeneralConfig)
++    setIngestConcurrency(draft.ingestConcurrency)
+ 
+     try {
+       await saveLlmConfig(newLlm)
+@@ -513,6 +521,7 @@ export function SettingsView() {
+ 
+       // Apply zoom level
+       useZoomStore.getState().setLevel(draft.zoomLevel)
++      await saveIngestConcurrency(draft.ingestConcurrency)
+       await saveZoomLevel(draft.zoomLevel)
+ 
+       setSaved(true)
+diff --git a/src/i18n/en.json b/src/i18n/en.json
+index 7280b33..bcd68c2 100644
+--- a/src/i18n/en.json
++++ b/src/i18n/en.json
+@@ -586,7 +586,9 @@
+         "aiLanguageHint": "Force AI-generated content (chat replies, wiki pages, research output, lint reports) to use the selected language. Pick \"Auto\" to let the AI follow the user's input or source document language.",
+         "historyLength": "Conversation History Length",
+         "historyHint": "Number of prior messages sent to the AI on each request. More = richer context but more tokens.",
+-        "historyCurrent": "Currently {{count}} messages (about {{turns}} turns)"
++        "historyCurrent": "Currently {{count}} messages (about {{turns}} turns)",
++        "ingestConcurrency": "Ingest concurrency",
++        "ingestConcurrencyHint": "Max parallel LLM requests during ingest (page merge + embedding). Higher values speed up ingest on high-throughput endpoints. 1 = sequential."
+       },
+       "interface": {
+         "title": "Interface",
+diff --git a/src/i18n/zh.json b/src/i18n/zh.json
+index 629f544..79625a4 100644
+--- a/src/i18n/zh.json
++++ b/src/i18n/zh.json
+@@ -586,7 +586,9 @@
+         "aiLanguageHint": "强制 AI 生成内容（chat 回复、wiki 页面、research 结果、lint 报告）使用指定语言。选 \"Auto\" 让 AI 跟随用户输入或源文档的语言。",
+         "historyLength": "对话历史长度",
+         "historyHint": "每次请求发给 AI 的历史消息条数。多 = 上下文更完整但更费 token。",
+-        "historyCurrent": "当前 {{count}} 条消息（约 {{turns}} 轮对话）"
++        "historyCurrent": "当前 {{count}} 条消息（约 {{turns}} 轮对话）",
++        "ingestConcurrency": "Ingest 并发数",
++        "ingestConcurrencyHint": "Ingest 期间最大并行 LLM 请求数（页面合并 + 向量化）。高并发可加快高吞吐量端点的 ingest 速度。1 = 顺序执行。"
+       },
+       "interface": {
+         "title": "界面",
+diff --git a/src/lib/project-store.ts b/src/lib/project-store.ts
+index c59cb83..1ce973b 100644
+--- a/src/lib/project-store.ts
++++ b/src/lib/project-store.ts
+@@ -122,6 +122,18 @@ export async function loadMultimodalConfig(): Promise<MultimodalConfig | null> {
+   return (await store.get<MultimodalConfig>(MULTIMODAL_KEY)) ?? null
+ }
+ 
++const INGEST_CONCURRENCY_KEY = "ingestConcurrency"
++
++export async function saveIngestConcurrency(concurrency: number): Promise<void> {
++  const store = await getStore()
++  await store.set(INGEST_CONCURRENCY_KEY, concurrency)
++}
++
++export async function loadIngestConcurrency(): Promise<number | null> {
++  const store = await getStore()
++  return (await store.get<number>(INGEST_CONCURRENCY_KEY)) ?? null
++}
++
+ const MINERU_KEY = "mineruConfig"
+ 
+ function normalizeMineruConfig(config: MineruConfig): MineruConfig {
+diff --git a/src/stores/wiki-store.ts b/src/stores/wiki-store.ts
+index f29780d..273b8ad 100644
+--- a/src/stores/wiki-store.ts
++++ b/src/stores/wiki-store.ts
+@@ -379,6 +379,9 @@ interface WikiState {
+   searchApiConfig: SearchApiConfig
+   embeddingConfig: EmbeddingConfig
+   multimodalConfig: MultimodalConfig
++  /** Max concurrent LLM requests during ingest (page writes/merges,
++   *  embedding). Caps the internal pool. Default 5. */
++  ingestConcurrency: number
+   outputLanguage: OutputLanguage
+   proxyConfig: ProxyConfig
+   scheduledImportConfig: ScheduledImportConfig
+@@ -405,6 +408,7 @@ interface WikiState {
+   setSearchApiConfig: (config: SearchApiConfig) => void
+   setEmbeddingConfig: (config: EmbeddingConfig) => void
+   setMultimodalConfig: (config: MultimodalConfig) => void
++  setIngestConcurrency: (concurrency: number) => void
+   setOutputLanguage: (lang: OutputLanguage) => void
+   setProxyConfig: (config: ProxyConfig) => void
+   setScheduledImportConfig: (config: ScheduledImportConfig) => void
+@@ -512,6 +516,8 @@ export const useWikiStore = create<WikiState>((set) => ({
+     concurrency: 4,
+   },
+ 
++  ingestConcurrency: 5,
++
+   outputLanguage: "auto",
+ 
+   proxyConfig: {
+@@ -556,6 +562,7 @@ export const useWikiStore = create<WikiState>((set) => ({
+   setSearchApiConfig: (searchApiConfig) => set({ searchApiConfig }),
+   setEmbeddingConfig: (embeddingConfig) => set({ embeddingConfig }),
+   setMultimodalConfig: (multimodalConfig) => set({ multimodalConfig }),
++  setIngestConcurrency: (ingestConcurrency) => set({ ingestConcurrency }),
+   setOutputLanguage: (outputLanguage) => set({ outputLanguage }),
+   setProxyConfig: (proxyConfig) => set({ proxyConfig }),
+   setScheduledImportConfig: (scheduledImportConfig) => set({ scheduledImportConfig }),
+-- 
+2.54.0.windows.1
+

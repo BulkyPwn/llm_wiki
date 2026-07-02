@@ -1,0 +1,24 @@
+From 889e6bb2e7d0b2c83a3512ffcd309b2b30b20085 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Mon, 8 Jun 2026 20:52:55 +0800
+Subject: [PATCH 06/15] modify productName
+
+---
+ src-tauri/tauri.conf.json | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index 392447d..17c7827 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -1,6 +1,6 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+-  "productName": "LLM Wiki",
++  "productName": "LLM_Wiki",
+   "version": "0.5.4",
+   "identifier": "com.llmwiki.app",
+   "build": {
+-- 
+2.54.0.windows.1
+

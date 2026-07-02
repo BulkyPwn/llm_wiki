@@ -1,0 +1,171 @@
+From 8920d77a12412555dba2f357e43fa493a6a26a34 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Thu, 2 Jul 2026 20:20:52 +0800
+Subject: [PATCH 09/15] support custom model max token configure
+
+---
+ .../sections/llm-provider-section.tsx         | 30 +++++++++++++++++++
+ src/components/settings/settings-types.ts     |  1 +
+ src/components/settings/settings-view.tsx     |  2 ++
+ src/i18n/en.json                              |  2 ++
+ src/i18n/zh.json                              |  2 ++
+ src/lib/ingest.ts                             | 19 +++++++++---
+ src/stores/wiki-store.ts                      |  6 ++++
+ 7 files changed, 58 insertions(+), 4 deletions(-)
+
+diff --git a/src/components/settings/sections/llm-provider-section.tsx b/src/components/settings/sections/llm-provider-section.tsx
+index 7d6b999..7403e57 100644
+--- a/src/components/settings/sections/llm-provider-section.tsx
++++ b/src/components/settings/sections/llm-provider-section.tsx
+@@ -98,6 +98,36 @@ export function LlmProviderSection() {
+           />
+         ))}
+       </div>
++
++      {activePresetId === "custom" && (
++        <div className="space-y-2 rounded-md border p-4">
++          <Label htmlFor="ingest-max-tokens">
++            {t("settings.sections.llm.ingestMaxTokens")}
++          </Label>
++          <p className="text-xs text-muted-foreground">
++            {t("settings.sections.llm.ingestMaxTokensHint")}
++          </p>
++          <Input
++            id="ingest-max-tokens"
++            type="number"
++            min={512}
++            max={100_000}
++            step={256}
++            value={llmConfig.ingestMaxTokens ?? 20480}
++            onChange={(e) => {
++              const v = Number(e.target.value)
++              if (Number.isFinite(v) && v > 0) {
++                const updated = { ...llmConfig, ingestMaxTokens: v }
++                setLlmConfig(updated)
++                import("@/lib/project-store").then(({ saveLlmConfig }) =>
++                  saveLlmConfig(updated).catch(() => {}),
++                )
++              }
++            }}
++            className="w-32"
++          />
++        </div>
++      )}
+     </div>
+   )
+ }
+diff --git a/src/components/settings/settings-types.ts b/src/components/settings/settings-types.ts
+index dc35229..b574554 100644
+--- a/src/components/settings/settings-types.ts
++++ b/src/components/settings/settings-types.ts
+@@ -20,6 +20,7 @@ export interface SettingsDraft {
+   apiMode: CustomApiMode | undefined
+   reasoning: ReasoningConfig | undefined
+   localCliIsolation: boolean
++  ingestMaxTokens: number
+ 
+   // Embedding
+   embeddingEnabled: boolean
+diff --git a/src/components/settings/settings-view.tsx b/src/components/settings/settings-view.tsx
+index 786c6ec..f72f844 100644
+--- a/src/components/settings/settings-view.tsx
++++ b/src/components/settings/settings-view.tsx
+@@ -129,6 +129,7 @@ function initialDraft(
+     apiMode: llm.apiMode,
+     reasoning: llm.reasoning,
+     localCliIsolation: llm.localCliIsolation === true,
++    ingestMaxTokens: llm.ingestMaxTokens ?? 20480,
+     embeddingEnabled: embed.enabled,
+     embeddingEndpoint: embed.endpoint,
+     embeddingApiKey: embed.apiKey,
+@@ -350,6 +351,7 @@ export function SettingsView() {
+       apiMode: draft.provider === "custom" ? draft.apiMode : undefined,
+       reasoning: draft.reasoning,
+       localCliIsolation: draft.localCliIsolation,
++      ingestMaxTokens: draft.ingestMaxTokens,
+     }
+     const newEmbed = {
+       enabled: draft.embeddingEnabled,
+diff --git a/src/i18n/en.json b/src/i18n/en.json
+index e07d387..7280b33 100644
+--- a/src/i18n/en.json
++++ b/src/i18n/en.json
+@@ -299,6 +299,8 @@
+         "apiMode": "API Mode",
+         "endpoint": "Endpoint",
+         "contextWindow": "Context window",
++        "ingestMaxTokens": "Ingest max output tokens",
++        "ingestMaxTokensHint": "Custom endpoint only. Caps output tokens per ingest generation. Many model APIs limit this to 20480; exceeding it may cause the request to be rejected.",
+         "wireOpenAi": "OpenAI-compat",
+         "wireAnthropic": "Anthropic-compat",
+         "apiKeyPlaceholderCustom": "Leave empty if no key (local models)",
+diff --git a/src/i18n/zh.json b/src/i18n/zh.json
+index c5dc0ee..629f544 100644
+--- a/src/i18n/zh.json
++++ b/src/i18n/zh.json
+@@ -299,6 +299,8 @@
+         "apiMode": "API 模式",
+         "endpoint": "Endpoint",
+         "contextWindow": "上下文窗口",
++        "ingestMaxTokens": "Ingest 最大输出 Token",
++        "ingestMaxTokensHint": "仅对 Custom 端点生效。限制每次 ingest 生成的最大输出 token 数。部分模型 API 上限为 20480，超出可能导致请求被拒绝。",
+         "wireOpenAi": "OpenAI 兼容",
+         "wireAnthropic": "Anthropic 兼容",
+         "apiKeyPlaceholderCustom": "无 Key 可留空（本地模型）",
+diff --git a/src/lib/ingest.ts b/src/lib/ingest.ts
+index 7fd5fc3..c7ccb41 100644
+--- a/src/lib/ingest.ts
++++ b/src/lib/ingest.ts
+@@ -2300,10 +2300,21 @@ export function computeIngestSourceBudget(
+ 
+ export function computeIngestGenerationMaxTokens(maxContextSize: number | undefined): number {
+   const { maxCtx } = computeContextBudget(maxContextSize)
+-  if (maxCtx >= 512_000) return INGEST_GENERATION_TOKENS_512K
+-  if (maxCtx >= 256_000) return INGEST_GENERATION_TOKENS_256K
+-  if (maxCtx >= 128_000) return INGEST_GENERATION_TOKENS_128K
+-  return INGEST_GENERATION_TOKENS_DEFAULT
++  let tokens: number
++  if (maxCtx >= 512_000) tokens = INGEST_GENERATION_TOKENS_512K
++  else if (maxCtx >= 256_000) tokens = INGEST_GENERATION_TOKENS_256K
++  else if (maxCtx >= 128_000) tokens = INGEST_GENERATION_TOKENS_128K
++  else tokens = INGEST_GENERATION_TOKENS_DEFAULT
++
++  // Only the "custom" provider exposes an ingest output cap — known
++  // providers have known limits and the dynamic tiers above are safe.
++  const state = useWikiStore.getState()
++  const isCustom = state.activePresetId === "custom"
++  if (isCustom) {
++    const cap = state.llmConfig.ingestMaxTokens ?? 20_480
++    return Math.min(tokens, Math.max(512, cap))
++  }
++  return tokens
+ }
+ 
+ export function computeIngestReviewMaxTokens(maxContextSize: number | undefined): number {
+diff --git a/src/stores/wiki-store.ts b/src/stores/wiki-store.ts
+index d474751..f29780d 100644
+--- a/src/stores/wiki-store.ts
++++ b/src/stores/wiki-store.ts
+@@ -42,6 +42,11 @@ interface LlmConfig {
+   localCliIsolation?: boolean
+   /** Codex CLI provider only. Overall subprocess timeout in minutes. */
+   codexCliTimeoutMinutes?: number
++  /**
++   * Maximum output tokens for ingest generation. Capped per the model
++   * provider's API limit (many cap at 20480). Default 20480.
++   */
++  ingestMaxTokens?: number
+ }
+ 
+ export type SearchProvider =
+@@ -432,6 +437,7 @@ export const useWikiStore = create<WikiState>((set) => ({
+     azureApiVersion: "2024-10-21",
+     reasoning: { mode: "auto" },
+     localCliIsolation: false,
++    ingestMaxTokens: 20480,
+   },
+   providerConfigs: {},
+   activePresetId: null,
+-- 
+2.54.0.windows.1
+

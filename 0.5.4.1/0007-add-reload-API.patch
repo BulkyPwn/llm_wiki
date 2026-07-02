@@ -1,0 +1,130 @@
+From a5afdf463e3399bc6facf33cf0e198674f9e783a Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Tue, 9 Jun 2026 19:53:59 +0800
+Subject: [PATCH 07/15] add reload API
+
+---
+ src-tauri/src/api_server.rs | 18 ++++++++++
+ src/App.tsx                 | 70 +++++++++++++++++++++++++++++++++++++
+ 2 files changed, 88 insertions(+)
+
+diff --git a/src-tauri/src/api_server.rs b/src-tauri/src/api_server.rs
+index 15dc2a2..f9dc5ee 100644
+--- a/src-tauri/src/api_server.rs
++++ b/src-tauri/src/api_server.rs
+@@ -292,6 +292,7 @@ fn handle_request(
+             let _ = project_id;
+             err(501, "Chat API is not implemented in the local Rust API server yet. The existing chat/RAG pipeline currently lives in the WebView; expose it after moving the shared chat pipeline behind a backend command.")
+         }
++        (&Method::Post, ["config", "reload"]) => handle_config_reload(app),
+         _ => err(404, "Not found"),
+     }
+ }
+@@ -1893,6 +1894,23 @@ fn handle_project_activate(app: &AppHandle, body: &str) -> ApiResponse {
+     }))
+ }
+ 
++fn handle_config_reload(app: &AppHandle) -> ApiResponse {
++    invalidate_config_cache();
++
++    // Emit event to WebView so the frontend re-reads llmConfig (and
++    // other config sections) from the on-disk store. Useful when an
++    // external tool or a human edits app-state.json and wants the
++    // change to take effect without restarting the app.
++    let _ = app.emit("api://config-reload", ());
++
++    eprintln!("[API Server] Config reload requested — cache invalidated, frontend notified");
++
++    ok(json!({
++        "ok": true,
++        "message": "Config reload triggered — frontend will re-read app-state.json"
++    }))
++}
++
+ fn load_source_watch_config(
+     app: &AppHandle,
+     project_id: &str,
+diff --git a/src/App.tsx b/src/App.tsx
+index 828e231..0449495 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -185,6 +185,76 @@ function App() {
+     }
+   }, [])
+ 
++  // Listen for API-driven config reload (POST /api/v1/config/reload).
++  // When the API server receives a config-reload request, it emits this
++  // event — the frontend re-reads llmConfig (and other config sections)
++  // from the on-disk app-state.json, so hand-edited changes take effect
++  // without restarting the app.
++  useEffect(() => {
++    const unlisten = listen("api://config-reload", async () => {
++      console.log("[API] Config reload event received")
++      try {
++        const {
++          loadLlmConfig,
++          loadProviderConfigs,
++          loadActivePresetId,
++          loadSearchApiConfig,
++          loadEmbeddingConfig,
++          loadMultimodalConfig,
++          loadProxyConfig,
++          loadApiConfig,
++        } = await import("@/lib/project-store")
++        const { useWikiStore } = await import("@/stores/wiki-store")
++
++        const savedConfig = await loadLlmConfig()
++        if (savedConfig) {
++          useWikiStore.getState().setLlmConfig(savedConfig)
++        }
++        const savedProviderConfigs = await loadProviderConfigs()
++        if (savedProviderConfigs) {
++          useWikiStore.getState().setProviderConfigs(savedProviderConfigs)
++        }
++        const savedActivePreset = await loadActivePresetId()
++        if (savedActivePreset) {
++          useWikiStore.getState().setActivePresetId(savedActivePreset)
++        }
++        const savedSearchConfig = await loadSearchApiConfig()
++        if (savedSearchConfig) {
++          useWikiStore.getState().setSearchApiConfig(savedSearchConfig)
++        }
++        const savedEmbeddingConfig = await loadEmbeddingConfig()
++        if (savedEmbeddingConfig) {
++          useWikiStore.getState().setEmbeddingConfig(savedEmbeddingConfig)
++        }
++        const savedMultimodalConfig = await loadMultimodalConfig()
++        if (savedMultimodalConfig) {
++          useWikiStore.getState().setMultimodalConfig(savedMultimodalConfig)
++        }
++        const savedProxy = await loadProxyConfig()
++        if (savedProxy) {
++          useWikiStore.getState().setProxyConfig(savedProxy)
++        }
++        const savedApi = await loadApiConfig()
++        if (savedApi) {
++          useWikiStore.getState().setApiConfig({
++            enabled: typeof savedApi.enabled === "boolean" ? savedApi.enabled : true,
++            allowUnauthenticated:
++              typeof savedApi.allowUnauthenticated === "boolean"
++                ? savedApi.allowUnauthenticated
++                : false,
++            token: savedApi.token ?? "",
++          })
++        }
++        console.log("[API] Config reload complete")
++      } catch (err) {
++        console.error("[API] Config reload failed:", err)
++      }
++    })
++    return () => {
++      unlisten.then((fn) => fn()).catch(() => {})
++    }
++  }, [])
++
+   // Dev-only helper for visually testing the update-banner UX.
+   // Open dev tools and run:
+   //   __llmwiki_testUpdateBanner()
+-- 
+2.54.0.windows.1
+

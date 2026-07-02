@@ -1,0 +1,41 @@
+From 3dcef09efd5549b0ae1ac2cd223fb03e7a2476fb Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Wed, 10 Jun 2026 16:53:37 +0800
+Subject: [PATCH 08/15] add CLI version and help
+
+---
+ src-tauri/src/main.rs | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/src-tauri/src/main.rs b/src-tauri/src/main.rs
+index 0944615..c8bf66e 100644
+--- a/src-tauri/src/main.rs
++++ b/src-tauri/src/main.rs
+@@ -2,5 +2,24 @@
+ #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+ 
+ fn main() {
++    let args: Vec<String> = std::env::args().collect();
++
++    if args.iter().any(|a| a == "-v" || a == "--version") {
++        println!("llm-wiki v{}", env!("CARGO_PKG_VERSION"));
++        return;
++    }
++
++    if args.iter().any(|a| a == "-h" || a == "--help") {
++        println!("llm-wiki v{}", env!("CARGO_PKG_VERSION"));
++        println!("A personal knowledge base for LLM concepts.");
++        println!();
++        println!("Usage: llm-wiki.exe [OPTIONS]");
++        println!();
++        println!("Options:");
++        println!("  -v, --version   Print version");
++        println!("  -h, --help      Print help");
++        return;
++    }
++
+     llm_wiki_lib::run();
+ }
+-- 
+2.54.0.windows.1
+

@@ -1,0 +1,151 @@
+From 93bf746cd43579220e44fc4be6434b45b9f93397 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Fri, 29 May 2026 22:58:14 +0800
+Subject: [PATCH 03/15] modify build script
+
+---
+ build.ps1            | 45 +++++++++++++++++++++++++++++++++++++++++---
+ run.ps1              |  5 ++++-
+ src-tauri/Cargo.lock | 16 ++++++++++++++++
+ src-tauri/Cargo.toml |  1 +
+ src-tauri/src/lib.rs |  7 +++++++
+ 5 files changed, 70 insertions(+), 4 deletions(-)
+
+diff --git a/build.ps1 b/build.ps1
+index 72583be..e2516e8 100644
+--- a/build.ps1
++++ b/build.ps1
+@@ -1,8 +1,47 @@
++$ErrorActionPreference = "Stop"
+ $env:HTTP_PROXY = "http://127.0.0.1:7897"
+ $env:HTTPS_PROXY = "http://127.0.0.1:7897"
+ 
+-# 第一步：正常构建（生成安装器但不含 PATH）
++$overall = [System.Diagnostics.Stopwatch]::StartNew()
++
++# ── 安装依赖 ──────────────────────────────────────────────
++Write-Host "`n[1/4] npm install" -ForegroundColor Cyan
++$sw = [System.Diagnostics.Stopwatch]::StartNew()
++npm install
++$sw.Stop()
++Write-Host "  -> done in $($sw.Elapsed.TotalSeconds.ToString('0.0'))s"
++
++# ── 第一步：正常构建 ──────────────────────────────────────
++Write-Host "`n[2/4] tauri build" -ForegroundColor Cyan
++$sw.Restart()
+ npm run tauri build
++$sw.Stop()
++Write-Host "  -> done in $($sw.Elapsed.TotalSeconds.ToString('0.0'))s"
++
++# ── 第二步：注入 PATH 逻辑并重新打包 ──────────────────────
++Write-Host "`n[3/4] tauri:build:path (inject PATH + repackage)" -ForegroundColor Cyan
++$sw.Restart()
++npm run tauri:build:path
++$sw.Stop()
++Write-Host "  -> done in $($sw.Elapsed.TotalSeconds.ToString('0.0'))s"
++
++# ── 第三步：去除产物名中的版本号 ──────────────────────────
++Write-Host "`n[4/4] rename artifacts (remove version)" -ForegroundColor Cyan
++$sw.Restart()
++$bundleDir = "$PSScriptRoot\src-tauri\target\release\bundle"
++$version = (Get-Content "$PSScriptRoot\src-tauri\tauri.conf.json" | ConvertFrom-Json).version
++Get-ChildItem -Path $bundleDir -Recurse -File | Where-Object { $_.Name -match "_$([regex]::Escape($version))" } | ForEach-Object {
++    $newName = $_.Name -replace "_$([regex]::Escape($version))", ""
++    $newPath = Join-Path $_.Directory.FullName $newName
++    if (Test-Path $newPath) { Remove-Item $newPath -Force }
++    Rename-Item -Path $_.FullName -NewName $newName
++    Write-Host "  $($_.Name)  ->  $newName"
++}
++$sw.Stop()
++Write-Host "  -> done in $($sw.Elapsed.TotalSeconds.ToString('0.0'))s"
+ 
+-# 第二步：注入 PATH 逻辑并重新打包
+-npm run tauri:build:path
+\ No newline at end of file
++# ── 总耗时 ────────────────────────────────────────────────
++$overall.Stop()
++Write-Host "`n============================================" -ForegroundColor Green
++Write-Host "  Build complete in $($overall.Elapsed.TotalSeconds.ToString('0.0'))s" -ForegroundColor Green
++Write-Host "============================================`n" -ForegroundColor Green
+diff --git a/run.ps1 b/run.ps1
+index 91ef06d..62d7e61 100644
+--- a/run.ps1
++++ b/run.ps1
+@@ -19,4 +19,7 @@ taskkill /F /IM llm-wiki.exe
+ # # 显示窗口
+ # curl.exe -X POST http://127.0.0.1:19828/api/v1/window/show
+ # # 隐藏窗口
+-# curl.exe -X POST http://127.0.0.1:19828/api/v1/window/hide
+\ No newline at end of file
++# curl.exe -X POST http://127.0.0.1:19828/api/v1/window/hide
++
++# 查看监听端口
++netstat -ano | Select-String "LISTENING" | Select-String "19827|19828|1420|5002|9010|9011|9012"
+\ No newline at end of file
+diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
+index 2f274fa..7061e37 100644
+--- a/src-tauri/Cargo.lock
++++ b/src-tauri/Cargo.lock
+@@ -4486,6 +4486,7 @@ dependencies = [
+  "tauri-plugin-dialog",
+  "tauri-plugin-http",
+  "tauri-plugin-opener",
++ "tauri-plugin-single-instance",
+  "tauri-plugin-store",
+  "tiny_http",
+  "tokio",
+@@ -7470,6 +7471,21 @@ dependencies = [
+  "zbus",
+ ]
+ 
++[[package]]
++name = "tauri-plugin-single-instance"
++version = "2.4.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "5c8f29386f5e9fdc699182388a33ee80a56de436d91b67459e86afef426282af"
++dependencies = [
++ "serde",
++ "serde_json",
++ "tauri",
++ "thiserror 2.0.18",
++ "tracing",
++ "windows-sys 0.60.2",
++ "zbus",
++]
++
+ [[package]]
+ name = "tauri-plugin-store"
+ version = "2.4.3"
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index 61955de..ec3e6cb 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
+ 
+ [dependencies]
+ tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
++tauri-plugin-single-instance = "2"
+ tauri-plugin-opener = "2"
+ tauri-plugin-autostart = "2.5.1"
+ serde = { version = "1", features = ["derive"] }
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 77f90d2..064ead8 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -171,6 +171,13 @@ fn tray_available<R: tauri::Runtime>(window: &tauri::Window<R>) -> bool {
+ #[cfg_attr(mobile, tauri::mobile_entry_point)]
+ pub fn run() {
+     tauri::Builder::default()
++        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
++            if let Some(window) = app.get_webview_window("main") {
++                let _ = window.unminimize();
++                let _ = window.show();
++                let _ = window.set_focus();
++            }
++        }))
+         .plugin(tauri_plugin_opener::init())
+         .plugin(tauri_plugin_dialog::init())
+         .plugin(tauri_plugin_store::Builder::default().build())
+-- 
+2.54.0.windows.1
+

@@ -1,0 +1,800 @@
+From ac75450806bd5ea49025d515910f84d1248e4ec0 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Fri, 29 May 2026 21:55:11 +0800
+Subject: [PATCH 02/15] add build power shell script
+
+---
+ build.ps1                         |   8 +
+ postcss.config.mjs                |   1 +
+ run.ps1                           |  22 ++
+ scripts/inject-path-installer.mjs | 401 ++++++++++++++++++++++++++++++
+ scripts/repackage-installer.mjs   | 201 +++++++++++++++
+ src-tauri/.cargo/config.toml      |   2 +
+ src-tauri/src/api_server.rs       |  29 +++
+ src-tauri/src/lib.rs              |  36 +++
+ 8 files changed, 700 insertions(+)
+ create mode 100644 build.ps1
+ create mode 100644 postcss.config.mjs
+ create mode 100644 run.ps1
+ create mode 100644 scripts/inject-path-installer.mjs
+ create mode 100644 scripts/repackage-installer.mjs
+ create mode 100644 src-tauri/.cargo/config.toml
+
+diff --git a/build.ps1 b/build.ps1
+new file mode 100644
+index 0000000..72583be
+--- /dev/null
++++ b/build.ps1
+@@ -0,0 +1,8 @@
++$env:HTTP_PROXY = "http://127.0.0.1:7897"
++$env:HTTPS_PROXY = "http://127.0.0.1:7897"
++
++# 第一步：正常构建（生成安装器但不含 PATH）
++npm run tauri build
++
++# 第二步：注入 PATH 逻辑并重新打包
++npm run tauri:build:path
+\ No newline at end of file
+diff --git a/postcss.config.mjs b/postcss.config.mjs
+new file mode 100644
+index 0000000..56004c9
+--- /dev/null
++++ b/postcss.config.mjs
+@@ -0,0 +1 @@
++export default {}
+\ No newline at end of file
+diff --git a/run.ps1 b/run.ps1
+new file mode 100644
+index 0000000..91ef06d
+--- /dev/null
++++ b/run.ps1
+@@ -0,0 +1,22 @@
++# 按进程名查找
++Get-Process -Name "llm-wiki"
++
++# 或使用 tasklist 过滤
++tasklist | findstr llm-wiki
++
++# 查看更详细信息（PID、内存占用等）
++Get-Process -Name "llm-wiki" | Format-Table Id, ProcessName, CPU, WorkingSet64, StartTime
++
++# 在管理员终端中终止进程
++taskkill /F /IM llm-wiki.exe
++
++# 正常启动（不设置 LLM_WIKI_HEADLESS）
++.\llm-wiki.exe
++
++# LLM_WIKI_HEADLESS启动（设置 LLM_WIKI_HEADLESS）
++# $env:LLM_WIKI_HEADLESS = "1"
++# .\llm-wiki.exe
++# # 显示窗口
++# curl.exe -X POST http://127.0.0.1:19828/api/v1/window/show
++# # 隐藏窗口
++# curl.exe -X POST http://127.0.0.1:19828/api/v1/window/hide
+\ No newline at end of file
+diff --git a/scripts/inject-path-installer.mjs b/scripts/inject-path-installer.mjs
+new file mode 100644
+index 0000000..fb421b5
+--- /dev/null
++++ b/scripts/inject-path-installer.mjs
+@@ -0,0 +1,401 @@
++import fs from "node:fs";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
++import { glob } from "node:fs/promises";
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++const rootDir = path.resolve(__dirname, "..");
++const srcTauri = path.join(rootDir, "src-tauri");
++
++const NSIS_HOOK_POSTINSTALL = [
++  "",
++  "  ; ── PATH: add install dir ────────────────────────────────",
++  "  ; Read current user PATH, append $INSTDIR if not present.",
++  '  ReadRegStr $0 HKCU "Environment" "PATH"',
++  '  ${StrLoc} $1 $0 "$INSTDIR" ">"',
++  '  ${If} $1 == ""',
++  '    ${If} $0 == ""',
++  '      WriteRegExpandStr HKCU "Environment" "PATH" "$INSTDIR"',
++  "    ${Else}",
++  '      WriteRegExpandStr HKCU "Environment" "PATH" "$0;$INSTDIR"',
++  "    ${EndIf}",
++  '    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000',
++  "  ${EndIf}",
++  "  ; ─────────────────────────────────────────────────────────",
++  "",
++].join("\n");
++
++const NSIS_HOOK_PREUNINSTALL = [
++  "",
++  "  ; ── PATH: remove install dir ────────────────────────────",
++  '  ReadRegStr $0 HKCU "Environment" "PATH"',
++  '  ${If} $0 != ""',
++  '    ${WordReplace} $0 ";$INSTDIR;" ";" "+*" $1',
++  '    ${WordReplace} $1 ";$INSTDIR" "" "+*" $2',
++  '    ${WordReplace} $2 "$INSTDIR;" "" "+*" $3',
++  '    ${WordReplace} $3 "$INSTDIR" "" "+*" $4',
++  '    ${If} $4 != $0',
++  '      WriteRegExpandStr HKCU "Environment" "PATH" "$4"',
++  '      SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000',
++  "    ${EndIf}",
++  "  ${EndIf}",
++  "  ; ─────────────────────────────────────────────────────────",
++  "",
++].join("\n");
++
++function injectNsisHooks(filePath) {
++  let content = fs.readFileSync(filePath, "utf-8");
++
++  if (content.includes("─ PATH:")) {
++    console.log(`  [nsis] PATH hooks already present, skipping.`);
++    return;
++  }
++
++  // Check that required includes exist
++  if (!content.includes("WordFunc.nsh")) {
++    console.warn("  [nsis] WARNING: WordFunc.nsh not found, PATH removal may fail.");
++  }
++  if (!content.includes("StrFunc.nsh")) {
++    console.warn("  [nsis] WARNING: StrFunc.nsh not found, PATH add may fail.");
++  }
++
++  // Define the NSIS_HOOK_* macros before Section Install.
++  // The Tauri-generated installer.nsi already has !ifmacrodef/!insertmacro
++  // call sites that will expand these macros automatically.
++  const installSectionStart = "Section Install";
++  const installStartIdx = content.indexOf(installSectionStart);
++  if (installStartIdx === -1) {
++    console.error("  [nsis] ERROR: 'Section Install' not found.");
++    return;
++  }
++
++  const macroBlock = [
++    "",
++    "!macro NSIS_HOOK_POSTINSTALL",
++    NSIS_HOOK_POSTINSTALL,
++    "!macroend",
++    "",
++    "!macro NSIS_HOOK_PREUNINSTALL",
++    NSIS_HOOK_PREUNINSTALL,
++    "!macroend",
++    "",
++  ].join("\n");
++
++  content =
++    content.slice(0, installStartIdx) + macroBlock + content.slice(installStartIdx);
++
++  fs.writeFileSync(filePath, content);
++  console.log(`  [nsis] PATH hooks injected.`);
++}
++
++function injectWixEnvironment(filePath) {
++  let content = fs.readFileSync(filePath, "utf-8");
++
++  // Skip if already processed
++  if (content.includes('Component Id="EnvPathComponent"')) {
++    console.log(`  [wix]  PATH feature already configured, skipping.`);
++    return;
++  }
++
++  // ── Step 1: Switch WixUI from InstallDir to Advanced ──
++  // WixUI_Advanced includes both FeaturesDlg (feature tree) and InstallDirDlg.
++  const oldUIRef = '<UIRef Id="WixUI_InstallDir" />';
++  const newUIRef = '<UIRef Id="WixUI_Advanced" />';
++
++  if (content.includes(oldUIRef)) {
++    content = content.replace(oldUIRef, newUIRef);
++
++    // Dialog flow with WixUI_Advanced:
++    // Default: WelcomeDlg → LicenseAgreementDlg → InstallScopeDlg → InstallDirDlg → FeaturesDlg → VerifyReadyDlg → ...
++    // We want: WelcomeDlg → InstallDirDlg → FeaturesDlg → VerifyReadyDlg → ... (skip license and scope)
++    const oldNav = [
++      '            <!-- Skip license dialog -->',
++      '            <Publish Dialog="WelcomeDlg"',
++      '                     Control="Next"',
++      '                     Event="NewDialog"',
++      '                     Value="InstallDirDlg"',
++      '                     Order="2">1</Publish>',
++      '            <Publish Dialog="InstallDirDlg"',
++      '                     Control="Back"',
++      '                     Event="NewDialog"',
++      '                     Value="WelcomeDlg"',
++      '                     Order="2">1</Publish>',
++    ].join("\n");
++
++    const newNav = [
++      '            <!-- Skip license dialog, go WelcomeDlg → InstallDirDlg → FeaturesDlg -->',
++      '            <Publish Dialog="WelcomeDlg"',
++      '                     Control="Next"',
++      '                     Event="NewDialog"',
++      '                     Value="InstallDirDlg"',
++      '                     Order="2">1</Publish>',
++      '            <!-- Skip InstallScopeDlg: InstallDirDlg back → WelcomeDlg -->',
++      '            <Publish Dialog="InstallDirDlg"',
++      '                     Control="Back"',
++      '                     Event="NewDialog"',
++      '                     Value="WelcomeDlg"',
++      '                     Order="2">1</Publish>',
++      '            <!-- After InstallDirDlg, go to FeaturesDlg (feature tree) -->',
++      '            <Publish Dialog="InstallDirDlg"',
++      '                     Control="Next"',
++      '                     Event="NewDialog"',
++      '                     Value="FeaturesDlg"',
++      '                     Order="1">1</Publish>',
++      '            <!-- FeaturesDlg back goes to InstallDirDlg -->',
++      '            <Publish Dialog="FeaturesDlg"',
++      '                     Control="Back"',
++      '                     Event="NewDialog"',
++      '                     Value="InstallDirDlg"',
++      '                     Order="1">1</Publish>',
++    ].join("\n");
++
++    if (content.includes(oldNav)) {
++        content = content.replace(oldNav, newNav);
++        // Add required properties for WixUI_Advanced
++        // WixUI_Advanced already defines WIXUI_INSTALLDIR internally, so remove ours
++        content = content.replace(
++          '            <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />\n',
++          '            <!-- WIXUI_INSTALLDIR provided by WixUI_Advanced -->\n'
++        );
++        const uiBlock = content.indexOf('<UI>');
++        const firstPublish = content.indexOf('<Publish', uiBlock);
++        if (firstPublish !== -1) {
++          const props = [
++            '            <Property Id="ApplicationFolderName" Value="LLM Wiki" />',
++            '            <Property Id="WixAppFolder" Value="WixPerMachineFolder" />',
++          ];
++          let before = content.slice(0, firstPublish);
++          if (!before.includes('ApplicationFolderName')) {
++            const insert = '\n' + props.join('\n') + '\n\n';
++            content = content.slice(0, firstPublish) + insert + content.slice(firstPublish);
++          }
++        }
++        console.log(`  [wix]  Switched UI to WixUI_Advanced (FeaturesDlg + InstallDirDlg).`);
++    } else {
++      // Try with different line endings or indentation
++      console.log(`  [wix]  Dialog nav not in expected format; injecting anyway.`);
++      // Replace the UI block contents manually
++      const uiEndMarker = '        </UI>';
++      const uiStartMarker = '        <UI>';
++      const uiStartIdx = content.indexOf(uiStartMarker);
++      const uiEndIdx = content.indexOf(uiEndMarker, uiStartIdx);
++      if (uiStartIdx !== -1 && uiEndIdx !== -1) {
++        // Build replacement UI block
++        const newUI = [
++          '        <UI>',
++           '            <!-- launch app checkbox -->',
++           '            <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>',
++           '',
++           '            <Property Id="ApplicationFolderName" Value="LLM Wiki" />',
++           '            <Property Id="WixAppFolder" Value="WixPerMachineFolder" />',
++           '',
++           '            <!-- Flow: WelcomeDlg → InstallDirDlg → FeaturesDlg → VerifyReadyDlg -->',
++          '            <Publish Dialog="WelcomeDlg"',
++          '                     Control="Next"',
++          '                     Event="NewDialog"',
++          '                     Value="InstallDirDlg"',
++          '                     Order="2">1</Publish>',
++          '            <Publish Dialog="InstallDirDlg"',
++          '                     Control="Back"',
++          '                     Event="NewDialog"',
++          '                     Value="WelcomeDlg"',
++          '                     Order="2">1</Publish>',
++          '            <Publish Dialog="InstallDirDlg"',
++          '                     Control="Next"',
++          '                     Event="NewDialog"',
++          '                     Value="FeaturesDlg"',
++          '                     Order="1">1</Publish>',
++          '            <Publish Dialog="FeaturesDlg"',
++          '                     Control="Back"',
++          '                     Event="NewDialog"',
++          '                     Value="InstallDirDlg"',
++          '                     Order="1">1</Publish>',
++          '        </UI>',
++        ].join("\n");
++        content = content.slice(0, uiStartIdx) + newUI + content.slice(uiEndIdx + uiEndMarker.length);
++        console.log(`  [wix]  Rebuilt UI block for WixUI_Advanced.`);
++      }
++    }
++  }
++
++  // ── Step 2: Remove placeholder Environment Feature (left from Tauri template) ──
++  const envFeaturePattern = /[\t ]*<Feature\s+Id="Environment"[\s\S]*?\/Feature>\s*/g;
++  if (envFeaturePattern.test(content)) {
++    content = content.replace(envFeaturePattern, "");
++    console.log(`  [wix]  Removed placeholder Environment Feature.`);
++  }
++
++  // ── Step 3: Remove any stale <Environment> from Path component ──
++  const staleEnvInPath = /[\t ]*<Environment\s+Id="EnvPath"[^>]*\/>\s*/g;
++  if (staleEnvInPath.test(content)) {
++    content = content.replace(staleEnvInPath, "");
++    console.log(`  [wix]  Removed stale <Environment> from Path component.`);
++  }
++
++  // ── Step 4: Create EnvPathComponent + Environment Feature ──
++  // Insert the new component right after the RegistryEntries component inside <DirectoryRef Id="INSTALLDIR">
++  const registryEnd = "</Component>";
++  const dirRefStart = '<DirectoryRef Id="INSTALLDIR">';
++  const dirRefIdx = content.indexOf(dirRefStart);
++  if (dirRefIdx === -1) {
++    console.error("  [wix]  ERROR: DirectoryRef INSTALLDIR not found.");
++    return;
++  }
++
++  // Find end of RegistryEntries component (first </Component> after dirRefStart)
++  const afterDirRef = content.slice(dirRefIdx);
++  const firstClose = afterDirRef.indexOf(registryEnd);
++  if (firstClose === -1) {
++    console.error("  [wix]  ERROR: Could not find RegistryEntries close tag.");
++    return;
++  }
++  const insertPos = dirRefIdx + firstClose + registryEnd.length;
++
++  const envComponent = [
++    "",
++    "            <Component Id=\"EnvPathComponent\" Guid=\"*\" Win64=\"$(var.Win64)\">",
++    "                <Environment Id=\"EnvPath\"",
++    "                             Name=\"PATH\"",
++    "                             Action=\"set\"",
++    "                             Part=\"last\"",
++    '                             Value="[INSTALLDIR]"',
++    '                             System="yes" />',
++    "                <RegistryValue Root=\"HKCU\"",
++    '                               Key="Software\\llmwiki\\LLM Wiki"',
++    '                               Name="PathEnv"',
++    '                               Type="integer"',
++    '                               Value="1"',
++    '                               KeyPath="yes" />',
++    "            </Component>",
++    "",
++  ].join("\n");
++
++  content = content.slice(0, insertPos) + envComponent + content.slice(insertPos);
++
++  // ── Step 5: Add Environment Feature before the closing </Feature> of MainProgram ──
++  // Find the closing </Feature> of the outermost Feature (MainProgram).
++  // Strategy: find <Feature Id="MainProgram", then find balanced </Feature>
++  const mainProgStart = '<Feature\r\n                Id="MainProgram"';
++  const mainIdx = content.indexOf(mainProgStart);
++  if (mainIdx === -1) {
++    console.error("  [wix]  ERROR: MainProgram Feature not found.");
++    return;
++  }
++
++  // Simple approach: find the LAST </Feature> after the ShortcutsFeature
++  const shortcutsFeatureStart = '            <Feature Id="ShortcutsFeature"';
++  const shortcutsIdx = content.indexOf(shortcutsFeatureStart);
++  if (shortcutsIdx === -1) {
++    console.error("  [wix]  ERROR: ShortcutsFeature not found.");
++    return;
++  }
++
++  const afterShortcuts = content.slice(shortcutsIdx);
++  // Find the closing </Feature> of ShortcutsFeature
++  let depth2 = 1;
++  let pos2 = afterShortcuts.indexOf(">") + 1;
++  while (depth2 > 0 && pos2 < afterShortcuts.length) {
++    const nextOpen = afterShortcuts.indexOf("<Feature ", pos2);
++    const nextClose = afterShortcuts.indexOf("</Feature>", pos2);
++    if (nextClose === -1) break;
++    if (nextOpen !== -1 && nextOpen < nextClose) {
++      depth2++;
++      pos2 = nextOpen + "<Feature ".length;
++    } else {
++      depth2--;
++      if (depth2 === 0) {
++        pos2 = nextClose;
++        break;
++      }
++      pos2 = nextClose + "</Feature>".length;
++    }
++  }
++
++  if (depth2 !== 0) {
++    console.error("  [wix]  ERROR: Could not find ShortcutsFeature closing tag, depth=" + depth2);
++    return;
++  }
++
++  const absShortcutsClose = shortcutsIdx + pos2 + "</Feature>".length;
++
++  const envFeature = [
++    "",
++    "            <Feature",
++    '                Id="Environment"',
++    '                Title="Add to system PATH"',
++    '                Description="Add LLM Wiki installation directory to the system PATH environment variable so you can run llm-wiki from any terminal."',
++    '                Level="1"',
++    '                Absent="allow">',
++    '                <ComponentRef Id="EnvPathComponent"/>',
++    "            </Feature>",
++    "",
++  ].join("\n");
++
++  content = content.slice(0, absShortcutsClose) + envFeature + content.slice(absShortcutsClose);
++
++  fs.writeFileSync(filePath, content);
++  console.log(`  [wix]  PATH Feature + EnvPathComponent injected.`);
++}
++
++async function main() {
++  console.log("[inject-path] Searching for generated installer scripts...\n");
++
++  // Find NSIS installer.nsi
++  const nsiPatterns = [
++    path.join(srcTauri, "target", "**", "nsis", "**", "installer.nsi"),
++  ];
++
++  let found = false;
++  try {
++    for (const pattern of nsiPatterns) {
++      for await (const file of glob(pattern)) {
++        found = true;
++        injectNsisHooks(file);
++      }
++    }
++  } catch (e) {
++    // glob may not be available; try manual paths
++  }
++
++  if (!found) {
++    // Try common paths
++    const commonNsiPaths = [
++      path.join(srcTauri, "target", "release", "nsis", "x64", "installer.nsi"),
++      path.join(srcTauri, "target", "release", "bundle", "nsis", "installer.nsi"),
++    ];
++    for (const p of commonNsiPaths) {
++      if (fs.existsSync(p)) {
++        injectNsisHooks(p);
++        found = true;
++      }
++    }
++  }
++
++  if (!found) {
++    console.log("  [nsis] No installer.nsi found (may not have built NSIS target).");
++  }
++
++  // Find WiX main.wxs
++  let wixFound = false;
++  const commonWxsPaths = [
++    path.join(srcTauri, "target", "release", "wix", "x64", "main.wxs"),
++    path.join(srcTauri, "target", "release", "bundle", "wix", "main.wxs"),
++  ];
++  for (const p of commonWxsPaths) {
++    if (fs.existsSync(p)) {
++      injectWixEnvironment(p);
++      wixFound = true;
++    }
++  }
++
++  if (!wixFound) {
++    console.log("  [wix]  No main.wxs found (may not have built MSI target).");
++  }
++
++  console.log("\n[inject-path] Done.");
++}
++
++main().catch((err) => {
++  console.error("[inject-path] Fatal error:", err);
++  process.exit(1);
++});
+diff --git a/scripts/repackage-installer.mjs b/scripts/repackage-installer.mjs
+new file mode 100644
+index 0000000..21b1b6f
+--- /dev/null
++++ b/scripts/repackage-installer.mjs
+@@ -0,0 +1,201 @@
++import { execSync } from "node:child_process";
++import fs from "node:fs";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
++import os from "node:os";
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++const rootDir = path.resolve(__dirname, "..");
++const srcTauri = path.join(rootDir, "src-tauri");
++const targetDir = path.join(srcTauri, "target", "release");
++
++const NSIS_DIR = path.join(targetDir, "nsis", "x64");
++const NSIS_BUNDLE_DIR = path.join(targetDir, "bundle", "nsis");
++const WIX_DIR = path.join(targetDir, "wix", "x64");
++const WIX_BUNDLE_DIR = path.join(targetDir, "bundle", "msi");
++
++const LOCAL_APPDATA = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
++const MAKENSIS = path.join(LOCAL_APPDATA, "tauri", "NSIS", "Bin", "makensis.exe");
++const WIX_TOOLS = path.join(LOCAL_APPDATA, "tauri", "WixTools314");
++const LIGHT = path.join(WIX_TOOLS, "light.exe");
++const CANDLE = path.join(WIX_TOOLS, "candle.exe");
++
++function findTool(name, ...candidates) {
++  for (const c of candidates) {
++    if (fs.existsSync(c)) return c;
++  }
++  throw new Error(`Tool not found: ${name}. Searched: ${candidates.join(", ")}`);
++}
++
++function repackageNsis() {
++  const nsiFile = path.join(NSIS_DIR, "installer.nsi");
++  if (!fs.existsSync(nsiFile)) {
++    console.log("  [nsis] installer.nsi not found, skipping.");
++    return;
++  }
++
++  if (!fs.existsSync(MAKENSIS)) {
++    console.log("  [nsis] makensis.exe not found, skipping.");
++    return;
++  }
++
++  // Determine output exe name from the nsi file
++  const nsiContent = fs.readFileSync(nsiFile, "utf-8");
++  const outFileMatch = nsiContent.match(/^!define\s+OUTFILE\s+"(.+)"$/m);
++  const outFileName = outFileMatch ? outFileMatch[1] : path.basename(nsiFile, ".nsi") + ".exe";
++
++  // Remove previous output if exists
++  const prevExe = path.join(NSIS_DIR, outFileName);
++  if (fs.existsSync(prevExe)) {
++    fs.unlinkSync(prevExe);
++  }
++
++  console.log("  [nsis] Recompiling installer...");
++  const cwd = NSIS_DIR;
++  try {
++    const result = execSync(`"${MAKENSIS}" installer.nsi`, {
++      cwd,
++      stdio: "pipe",
++      env: { ...process.env },
++      encoding: "utf-8",
++    });
++    console.log(result);
++  } catch (e) {
++    console.error("  [nsis] makensis stderr:", e.stderr?.toString() || "");
++    console.error("  [nsis] makensis stdout:", e.stdout?.toString() || "");
++    console.error("  [nsis] makensis failed:", e.message);
++    return;
++  }
++
++  // Find the generated .exe
++  const srcExe = path.join(NSIS_DIR, outFileName);
++  if (!fs.existsSync(srcExe)) {
++    console.error(`  [nsis] Output exe not found: ${srcExe}`);
++    // Try glob
++    const files = fs.readdirSync(NSIS_DIR).filter(f => f.endsWith(".exe") && !f.includes("uninstall"));
++    if (files.length > 0) {
++      const found = files[0];
++      console.log(`  [nsis] Found alternative exe: ${found}`);
++      const altSrc = path.join(NSIS_DIR, found);
++      copyToBundle(NSIS_BUNDLE_DIR, altSrc, "-setup.exe");
++      return;
++    }
++    return;
++  }
++
++  copyToBundle(NSIS_BUNDLE_DIR, srcExe, "-setup.exe");
++}
++
++function copyToBundle(bundleDir, srcExe, suffix) {
++  fs.mkdirSync(bundleDir, { recursive: true });
++
++  // Find existing installer in bundle directory and remove
++  const existing = fs.readdirSync(bundleDir).filter(f => f.endsWith(suffix));
++  for (const f of existing) {
++    fs.unlinkSync(path.join(bundleDir, f));
++  }
++
++  const destName = existing[0] || "LLM Wiki" + suffix;
++  const destExe = path.join(bundleDir, destName);
++  fs.copyFileSync(srcExe, destExe);
++  console.log(`  [nsis] Done → ${destExe}`);
++}
++
++function repackageWix() {
++  const wxsFile = path.join(WIX_DIR, "main.wxs");
++  const wixobjFile = path.join(WIX_DIR, "main.wixobj");
++  const localeFile = path.join(WIX_DIR, "locale.wxl");
++
++  if (!fs.existsSync(wxsFile)) {
++    console.log("  [wix]  main.wxs not found, skipping.");
++    return;
++  }
++
++  if (!fs.existsSync(CANDLE) || !fs.existsSync(LIGHT)) {
++    console.log("  [wix]  WiX tools not found, skipping.");
++    return;
++  }
++
++  // Step 1: candle.exe — compile .wxs → .wixobj
++  // Note: locale.wxl is omitted; WiX 3 candle treats .wxl as invalid source.
++  // The !(loc.xxx) references will fall back to empty/default values.
++  console.log("  [wix]  Compiling .wxs -> .wixobj...");
++  try {
++    const args = [
++      `"${wxsFile}"`,
++      `-arch x64`,
++      `-ext WixUIExtension`,
++      `-ext WixUtilExtension`,
++    ]
++      .filter(Boolean)
++      .join(" ");
++    const result = execSync(`"${CANDLE}" ${args}`, {
++      cwd: WIX_DIR,
++      stdio: "pipe",
++      env: { ...process.env },
++      encoding: "utf-8",
++    });
++    console.log(result);
++  } catch (e) {
++    console.error("  [wix]  candle stderr:", e.stderr?.toString() || "");
++    console.error("  [wix]  candle stdout:", e.stdout?.toString() || "");
++    console.error("  [wix]  candle failed:", e.message);
++    return;
++  }
++
++  if (!fs.existsSync(wixobjFile)) {
++    console.error("  [wix]  main.wixobj not generated.");
++    return;
++  }
++
++  // Step 2: light.exe — link .wixobj → .msi
++  console.log("  [wix]  Linking .wixobj → .msi...");
++
++  fs.mkdirSync(WIX_BUNDLE_DIR, { recursive: true });
++
++  // Find existing installer name
++  const existing = fs.readdirSync(WIX_BUNDLE_DIR).filter(f => f.endsWith(".msi"));
++  const msiName = existing[0] || "LLM Wiki.msi";
++  const msiOutput = path.join(WIX_BUNDLE_DIR, msiName);
++
++  try {
++    const args = [
++      `"${wixobjFile}"`,
++      `-out "${msiOutput}"`,
++      fs.existsSync(localeFile) ? `-loc "${localeFile}"` : "",
++      `-ext WixUIExtension`,
++      `-ext WixUtilExtension`,
++    ]
++      .filter(Boolean)
++      .join(" ");
++    const result = execSync(`"${LIGHT}" ${args}`, {
++      cwd: WIX_DIR,
++      stdio: "pipe",
++      env: { ...process.env },
++      encoding: "utf-8",
++    });
++    console.log(result);
++  } catch (e) {
++    console.error("  [wix]  light stderr:", e.stderr?.toString() || "");
++    console.error("  [wix]  light stdout:", e.stdout?.toString() || "");
++    console.error("  [wix]  light failed:", e.message);
++    return;
++  }
++
++  console.log(`  [wix]  Done → ${msiOutput}`);
++}
++
++function main() {
++  console.log("[repackage] Rebuilding installers with PATH injection...\n");
++  repackageNsis();
++  console.log("");
++  repackageWix();
++  console.log("\n[repackage] Complete.");
++}
++
++try {
++  main();
++} catch (err) {
++  console.error("[repackage] Fatal error:", err);
++  process.exit(1);
++}
+diff --git a/src-tauri/.cargo/config.toml b/src-tauri/.cargo/config.toml
+new file mode 100644
+index 0000000..57747f7
+--- /dev/null
++++ b/src-tauri/.cargo/config.toml
+@@ -0,0 +1,2 @@
++[target.x86_64-pc-windows-msvc]
++linker = "rust-lld"
+diff --git a/src-tauri/src/api_server.rs b/src-tauri/src/api_server.rs
+index 8b257cc..b881634 100644
+--- a/src-tauri/src/api_server.rs
++++ b/src-tauri/src/api_server.rs
+@@ -232,6 +232,14 @@ fn handle_request(
+             "allowLanAccess": api_allow_lan_access(app),
+         }));
+     }
++    // /api/v1/window/show only reveals the GUI window — no data
++    // exposure, safe to bypass both the enabled toggle and auth.
++    if path == format!("{API_PREFIX}/window/show") && method == &Method::Post {
++        return handle_window_show(app);
++    }
++    if path == format!("{API_PREFIX}/window/hide") && method == &Method::Post {
++        return handle_window_hide(app);
++    }
+     if !path.starts_with(API_PREFIX) {
+         return err(404, "Not found");
+     }
+@@ -555,6 +563,27 @@ struct ProjectEntry {
+     current: bool,
+ }
+ 
++fn handle_window_show(app: &AppHandle) -> ApiResponse {
++    if let Some(window) = app.get_webview_window("main") {
++        let _ = window.show();
++        let _ = window.set_focus();
++        eprintln!("[API Server] Window shown via POST /api/v1/window/show");
++        ok(json!({ "ok": true, "message": "Window shown" }))
++    } else {
++        err(500, "No main window found")
++    }
++}
++
++fn handle_window_hide(app: &AppHandle) -> ApiResponse {
++    if let Some(window) = app.get_webview_window("main") {
++        let _ = window.hide();
++        eprintln!("[API Server] Window hidden via POST /api/v1/window/hide");
++        ok(json!({ "ok": true, "message": "Window hidden" }))
++    } else {
++        err(500, "No main window found")
++    }
++}
++
+ fn handle_projects(app: &AppHandle) -> ApiResponse {
+     let projects = load_projects(app);
+     let current_project = projects.iter().find(|project| project.current).cloned();
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 0c3cb2f..77f90d2 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -83,6 +83,40 @@ fn mcp_server_entry_path(app: tauri::AppHandle) -> Result<String, String> {
+     })
+ }
+ 
++/// Show the main window when running in headless mode (LLM_WIKI_HEADLESS
++/// env var was set). Useful as a programmatic escape hatch so users can
++/// bring the GUI back without restarting the process.
++#[tauri::command]
++fn show_window(app: tauri::AppHandle) -> String {
++    use tauri::Manager;
++    run_guarded("show_window", || {
++        if let Some(window) = app.get_webview_window("main") {
++            let _ = window.show();
++            let _ = window.set_focus();
++            eprintln!("[headless] Window shown via command");
++        } else {
++            eprintln!("[headless] No main window found");
++        }
++        Ok("ok".to_string())
++    })
++    .unwrap_or_else(|e| format!("error: {e}"))
++}
++
++#[tauri::command]
++fn hide_window(app: tauri::AppHandle) -> String {
++    use tauri::Manager;
++    run_guarded("hide_window", || {
++        if let Some(window) = app.get_webview_window("main") {
++            let _ = window.hide();
++            eprintln!("[headless] Window hidden via command");
++        } else {
++            eprintln!("[headless] No main window found");
++        }
++        Ok("ok".to_string())
++    })
++    .unwrap_or_else(|e| format!("error: {e}"))
++}
++
+ /// Apply a proxy configuration to the process env immediately, so the
+ /// next outbound HTTP request picks it up without needing the user to
+ /// restart the app. tauri-plugin-http builds a fresh
+@@ -266,6 +300,8 @@ pub fn run() {
+             commands::file_sync::ignore_file_change_task,
+             set_proxy_env,
+             set_close_behavior,
++            show_window,
++            hide_window,
+         ])
+         .on_window_event(|window, event| {
+             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+-- 
+2.54.0.windows.1
+

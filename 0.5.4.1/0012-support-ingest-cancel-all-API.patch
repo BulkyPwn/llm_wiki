@@ -1,0 +1,81 @@
+From cec008c6511be950734d686a183ccb50d3cd96e7 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Wed, 24 Jun 2026 15:41:12 +0800
+Subject: [PATCH 12/15] support ingest cancel-all API
+
+---
+ src-tauri/src/api_server.rs | 18 ++++++++++++++++++
+ src/App.tsx                 | 21 +++++++++++++++++++++
+ 2 files changed, 39 insertions(+)
+
+diff --git a/src-tauri/src/api_server.rs b/src-tauri/src/api_server.rs
+index f9dc5ee..f5e9d26 100644
+--- a/src-tauri/src/api_server.rs
++++ b/src-tauri/src/api_server.rs
+@@ -292,6 +292,9 @@ fn handle_request(
+             let _ = project_id;
+             err(501, "Chat API is not implemented in the local Rust API server yet. The existing chat/RAG pipeline currently lives in the WebView; expose it after moving the shared chat pipeline behind a backend command.")
+         }
++        (&Method::Post, ["projects", project_id, "ingest", "cancel-all"]) => {
++            handle_ingest_cancel_all(app, project_id)
++        }
+         (&Method::Post, ["config", "reload"]) => handle_config_reload(app),
+         _ => err(404, "Not found"),
+     }
+@@ -1854,6 +1857,21 @@ fn handle_rescan(app: &AppHandle, project_id: &str) -> ApiResponse {
+     }
+ }
+ 
++fn handle_ingest_cancel_all(app: &AppHandle, project_id: &str) -> ApiResponse {
++    let payload = json!({ "projectId": project_id });
++    let _ = app.emit("api://ingest-cancel-all", &payload);
++
++    eprintln!(
++        "[API Server] Ingest cancel-all requested for project: {project_id}"
++    );
++
++    ok(json!({
++        "ok": true,
++        "message": "Ingest cancel-all requested",
++        "projectId": project_id,
++    }))
++}
++
+ #[derive(Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ struct ActivateProjectRequest {
+diff --git a/src/App.tsx b/src/App.tsx
+index 088d195..422deda 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -263,6 +263,27 @@ function App() {
+     }
+   }, [])
+ 
++  // Listen for API-driven ingest cancel-all (POST /api/v1/projects/:id/ingest/cancel-all).
++  useEffect(() => {
++    const unlisten = listen<{ projectId: string }>(
++      "api://ingest-cancel-all",
++      async (event) => {
++        const { projectId } = event.payload
++        console.log("[API] Ingest cancel-all event received:", event.payload)
++        try {
++          const { cancelAllTasks } = await import("@/lib/ingest-queue")
++          const removed = await cancelAllTasks()
++          console.log(`[API] Cancelled ${removed} ingest task(s) for project ${projectId}`)
++        } catch (err) {
++          console.error("[API] Ingest cancel-all failed:", err)
++        }
++      },
++    )
++    return () => {
++      unlisten.then((fn) => fn()).catch(() => {})
++    }
++  }, [])
++
+   // Dev-only helper for visually testing the update-banner UX.
+   // Open dev tools and run:
+   //   __llmwiki_testUpdateBanner()
+-- 
+2.54.0.windows.1
+

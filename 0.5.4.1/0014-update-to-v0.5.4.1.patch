@@ -1,0 +1,66 @@
+From c2c068a4510dc022a80cef661a52df46736a5a72 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Thu, 2 Jul 2026 20:52:54 +0800
+Subject: [PATCH 14/15] update to v0.5.4.1
+
+---
+ package.json              | 2 +-
+ src-tauri/Cargo.lock      | 2 +-
+ src-tauri/Cargo.toml      | 2 +-
+ src-tauri/tauri.conf.json | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/package.json b/package.json
+index 82e6c4b..0bad12f 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "llm-wiki",
+   "private": true,
+-  "version": "0.5.4",
++  "version": "0.5.4.1",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
+index 7061e37..5ae990b 100644
+--- a/src-tauri/Cargo.lock
++++ b/src-tauri/Cargo.lock
+@@ -4461,7 +4461,7 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
+ 
+ [[package]]
+ name = "llm-wiki"
+-version = "0.5.4"
++version = "0.5.4-1"
+ dependencies = [
+  "arrow-array",
+  "arrow-schema",
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index ec3e6cb..aa76f4e 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "llm-wiki"
+-version = "0.5.4"
++version = "0.5.4-1"
+ description = "LLM Wiki - A personal knowledge base for LLM concepts"
+ authors = []
+ edition = "2021"
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index 17c7827..e5b51c5 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -1,7 +1,7 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+   "productName": "LLM_Wiki",
+-  "version": "0.5.4",
++  "version": "0.5.4.1",
+   "identifier": "com.llmwiki.app",
+   "build": {
+     "beforeDevCommand": "npm run dev",
+-- 
+2.54.0.windows.1
+

@@ -1,0 +1,33 @@
+From b980ccfc0c14d2e5c01ec5b4c95864307f63b9f1 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Wed, 17 Jun 2026 23:29:26 +0800
+Subject: [PATCH 11/15] add refresh raw sources status by file tree
+
+---
+ src/components/sources/sources-view.tsx | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/components/sources/sources-view.tsx b/src/components/sources/sources-view.tsx
+index 177d69d..8e28f1b 100644
+--- a/src/components/sources/sources-view.tsx
++++ b/src/components/sources/sources-view.tsx
+@@ -34,6 +34,7 @@ export function SourcesView() {
+   const llmConfig = useWikiStore((s) => s.llmConfig)
+   const sourceWatchConfig = useWikiStore((s) => s.sourceWatchConfig)
+   const dataVersion = useWikiStore((s) => s.dataVersion)
++  const fileTree = useWikiStore((s) => s.fileTree)
+   const [sources, setSources] = useState<FileNode[]>([])
+   const [importing, setImporting] = useState(false)
+   const [ingestingPath, setIngestingPath] = useState<string | null>(null)
+@@ -77,7 +78,7 @@ export function SourcesView() {
+ 
+   useEffect(() => {
+     loadSources()
+-  }, [loadSources, dataVersion])
++  }, [loadSources, dataVersion, fileTree])
+ 
+   async function handleRefreshSources() {
+     if (!project || refreshing) return
+-- 
+2.54.0.windows.1
+

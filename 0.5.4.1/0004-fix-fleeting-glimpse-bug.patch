@@ -1,0 +1,48 @@
+From ba3c0e35477e4b23d55477b7d9badd5af7df5735 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Tue, 2 Jun 2026 15:45:45 +0800
+Subject: [PATCH 04/15] fix fleeting glimpse bug
+
+---
+ src-tauri/src/lib.rs      | 8 +++++---
+ src-tauri/tauri.conf.json | 3 ++-
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 064ead8..7b40891 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -243,11 +243,13 @@ pub fn run() {
+                 }
+             }
+ 
+-            if std::env::var("LLM_WIKI_HEADLESS").map_or(false, |v| !v.is_empty()) {
++            if std::env::var("LLM_WIKI_HEADLESS").map_or(true, |v| v.is_empty()) {
+                 if let Some(window) = app.get_webview_window("main") {
+-                    let _ = window.hide();
+-                    eprintln!("[headless] Window hidden (LLM_WIKI_HEADLESS is set)");
++                    let _ = window.show();
++                    eprintln!("[headless] Window shown (normal mode)");
+                 }
++            } else {
++                eprintln!("[headless] Running headless (LLM_WIKI_HEADLESS is set), window stays hidden");
+             }
+ 
+             Ok(())
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index c525de5..392447d 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -18,7 +18,8 @@
+         "resizable": true,
+         "fullscreen": false,
+         "hiddenTitle": true,
+-        "titleBarStyle": "Transparent"
++        "titleBarStyle": "Transparent",
++        "visible": false
+       }
+     ],
+     "security": {
+-- 
+2.54.0.windows.1
+
