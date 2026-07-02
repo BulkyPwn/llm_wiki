@@ -1,5 +1,5 @@
 import type { CustomApiMode } from "./llm-presets"
-import type { AzureModelFamily, CloseBehavior, MineruModelVersion, ReasoningConfig, SourceWatchConfig } from "@/stores/wiki-store"
+import type { AzureModelFamily, CloseBehavior, MineruModelVersion, ReasoningConfig, SourceWatchConfig, IngestTimeSlot } from "@/stores/wiki-store"
 
 /**
  * Shape of the draft state each section reads from and writes into.
@@ -51,6 +51,9 @@ export interface SettingsDraft {
 
   // Ingest
   ingestConcurrency: number
+  /** Whether to use time-based concurrency schedule instead of flat value. */
+  ingestConcurrencyScheduleEnabled: boolean
+  ingestConcurrencySchedule: IngestTimeSlot[]
 
   // Output preferences
   outputLanguage: string

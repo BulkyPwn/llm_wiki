@@ -588,7 +588,21 @@
         "historyHint": "Number of prior messages sent to the AI on each request. More = richer context but more tokens.",
         "historyCurrent": "Currently {{count}} messages (about {{turns}} turns)",
         "ingestConcurrency": "Ingest concurrency",
-        "ingestConcurrencyHint": "Max parallel LLM requests during ingest (page merge + embedding). Higher values speed up ingest on high-throughput endpoints. 1 = sequential."
+        "ingestConcurrencyHint": "Max parallel LLM requests during ingest (page merge + embedding). Higher values speed up ingest on high-throughput endpoints. 1 = sequential.",
+        "scheduleEnableLabel": "Time-based concurrency",
+        "scheduleEnableHint": "Set different concurrency limits for different times of day. Useful when your LLM API has time-based rate limits or costs.",
+        "scheduleHint": "Define time ranges (inclusive start, exclusive end). Cross-midnight ranges (e.g. 22:00-06:00) are supported. Hours not covered by any slot use the default concurrency above.",
+        "scheduleEmpty": "No time slots defined. Add one below.",
+        "slotLabel": "Label",
+        "slotLabelPlaceholder": "e.g. Night",
+        "slotStart": "Start",
+        "slotEnd": "End",
+        "slotConcurrency": "Concur.",
+        "slotRemove": "Remove",
+        "slotAdd": "+ Add time slot",
+        "slotOverlapWarning": "This time slot overlaps with another slot.",
+        "stateOn": "ON",
+        "stateOff": "OFF"
       },
       "interface": {
         "title": "Interface",

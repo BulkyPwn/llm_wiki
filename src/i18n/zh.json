@@ -588,7 +588,21 @@
         "historyHint": "每次请求发给 AI 的历史消息条数。多 = 上下文更完整但更费 token。",
         "historyCurrent": "当前 {{count}} 条消息（约 {{turns}} 轮对话）",
         "ingestConcurrency": "Ingest 并发数",
-        "ingestConcurrencyHint": "Ingest 期间最大并行 LLM 请求数（页面合并 + 向量化）。高并发可加快高吞吐量端点的 ingest 速度。1 = 顺序执行。"
+        "ingestConcurrencyHint": "Ingest 期间最大并行 LLM 请求数（页面合并 + 向量化）。高并发可加快高吞吐量端点的 ingest 速度。1 = 顺序执行。",
+        "scheduleEnableLabel": "按时段配置并发",
+        "scheduleEnableHint": "为一天中不同时段设置不同的并发限制。适用于 LLM API 按时段计费或限流的情况。",
+        "scheduleHint": "定义时间段（起始小时包含，结束小时不包含）。支持跨午夜时间范围（如 22:00-06:00）。未被任何时段覆盖的小时使用上方的默认并发数。",
+        "scheduleEmpty": "暂无时段，请在下方添加。",
+        "slotLabel": "标签",
+        "slotLabelPlaceholder": "例如：夜间",
+        "slotStart": "起始",
+        "slotEnd": "结束",
+        "slotConcurrency": "并发",
+        "slotRemove": "删除",
+        "slotAdd": "+ 添加时段",
+        "slotOverlapWarning": "此时段与另一个时段存在时间重叠。",
+        "stateOn": "开",
+        "stateOff": "关"
       },
       "interface": {
         "title": "界面",

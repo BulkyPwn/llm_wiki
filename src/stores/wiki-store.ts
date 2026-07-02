@@ -193,6 +193,24 @@ interface ScheduledImportConfig {
 }
 
 /**
+ * A time-range slot for time-based ingest concurrency.
+ * startHour is inclusive, endHour is exclusive (24h format, 0-24).
+ * e.g. { startHour: 22, endHour: 6, concurrency: 10 } covers 22:00-05:59.
+ * Cross-midnight ranges (startHour > endHour) are valid.
+ */
+export interface IngestTimeSlot {
+  id: string
+  /** User-facing label for the time slot. */
+  label: string
+  /** Start hour (0-23, inclusive). */
+  startHour: number
+  /** End hour (0-24, exclusive). 24 = midnight. */
+  endHour: number
+  /** Max concurrent LLM requests during this slot. */
+  concurrency: number
+}
+
+/**
  * Local HTTP API server config. Read by the Rust `api_server` module on
  * every request via `load_app_state` (5s cache). The Rust side is the
  * source of truth at request time; this struct is the persisted form
@@ -382,6 +400,11 @@ interface WikiState {
   /** Max concurrent LLM requests during ingest (page writes/merges,
    *  embedding). Caps the internal pool. Default 5. */
   ingestConcurrency: number
+  /** Whether time-based concurrency schedule is active. When enabled,
+   *  getMaxConcurrent() overrides ingestConcurrency with the matching
+   *  slot's value based on the current hour. */
+  ingestConcurrencyScheduleEnabled: boolean
+  ingestConcurrencySchedule: IngestTimeSlot[]
   outputLanguage: OutputLanguage
   proxyConfig: ProxyConfig
   scheduledImportConfig: ScheduledImportConfig
@@ -409,6 +432,8 @@ interface WikiState {
   setEmbeddingConfig: (config: EmbeddingConfig) => void
   setMultimodalConfig: (config: MultimodalConfig) => void
   setIngestConcurrency: (concurrency: number) => void
+  setIngestConcurrencyScheduleEnabled: (enabled: boolean) => void
+  setIngestConcurrencySchedule: (schedule: IngestTimeSlot[]) => void
   setOutputLanguage: (lang: OutputLanguage) => void
   setProxyConfig: (config: ProxyConfig) => void
   setScheduledImportConfig: (config: ScheduledImportConfig) => void
@@ -517,6 +542,8 @@ export const useWikiStore = create<WikiState>((set) => ({
   },
 
   ingestConcurrency: 5,
+  ingestConcurrencyScheduleEnabled: false,
+  ingestConcurrencySchedule: [],
 
   outputLanguage: "auto",
 
@@ -563,6 +590,8 @@ export const useWikiStore = create<WikiState>((set) => ({
   setEmbeddingConfig: (embeddingConfig) => set({ embeddingConfig }),
   setMultimodalConfig: (multimodalConfig) => set({ multimodalConfig }),
   setIngestConcurrency: (ingestConcurrency) => set({ ingestConcurrency }),
+  setIngestConcurrencyScheduleEnabled: (enabled) => set({ ingestConcurrencyScheduleEnabled: enabled }),
+  setIngestConcurrencySchedule: (schedule) => set({ ingestConcurrencySchedule: schedule }),
   setOutputLanguage: (outputLanguage) => set({ outputLanguage }),
   setProxyConfig: (proxyConfig) => set({ proxyConfig }),
   setScheduledImportConfig: (scheduledImportConfig) => set({ scheduledImportConfig }),

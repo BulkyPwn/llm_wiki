@@ -59,6 +59,41 @@ function resetQueueAccounting(): void {
   completedSinceIdle = 0
 }
 
+/**
+ * Determine the max number of concurrent ingest tasks.
+ *
+ * If a time-based schedule is enabled, looks up the matching slot for
+ * the current hour. Cross-midnight ranges (e.g. 22:00–06:00) are
+ * handled correctly. Falls back to the flat `ingestConcurrency` when
+ * no slot covers the current hour or the schedule is disabled.
+ */
+export function getMaxConcurrent(): number {
+  const state = useWikiStore.getState()
+  const flat = Math.max(1, state.ingestConcurrency || 5)
+
+  if (!state.ingestConcurrencyScheduleEnabled || state.ingestConcurrencySchedule.length === 0) {
+    return flat
+  }
+
+  const now = new Date().getHours()
+
+  for (const slot of state.ingestConcurrencySchedule) {
+    if (slot.startHour <= slot.endHour) {
+      // Normal range: 9-17
+      if (now >= slot.startHour && now < slot.endHour) {
+        return Math.max(1, slot.concurrency)
+      }
+    } else {
+      // Cross-midnight range: 22-06
+      if (now >= slot.startHour || now < slot.endHour) {
+        return Math.max(1, slot.concurrency)
+      }
+    }
+  }
+
+  return flat
+}
+
 // ── Persistence ───────────────────────────────────────────────────────────
 
 function queueFilePath(projectPath: string): string {
