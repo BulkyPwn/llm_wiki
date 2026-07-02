@@ -10,7 +10,7 @@ import { useLintStore } from "@/stores/lint-store"
 import { useChatStore } from "@/stores/chat-store"
 import { BASE_FONT_SIZE_PX, useZoomStore } from "@/stores/zoom-store"
 import { openProject } from "@/commands/fs"
-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadZoomLevel } from "@/lib/project-store"
+import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadIngestConcurrency, loadZoomLevel } from "@/lib/project-store"
 import { loadReviewItems, loadLintItems, loadChatHistory, loadChatPreferences } from "@/lib/persist"
 import { setupAutoSave } from "@/lib/auto-save"
 import { startClipWatcher } from "@/lib/clip-watcher"
@@ -204,6 +204,7 @@ function App() {
           loadMultimodalConfig,
           loadProxyConfig,
           loadApiConfig,
+          loadIngestConcurrency,
         } = await import("@/lib/project-store")
 
         // Reload the in-memory store from disk before reading any
@@ -252,6 +253,10 @@ function App() {
                 : false,
             token: savedApi.token ?? "",
           })
+        }
+        const savedConcurrency = await loadIngestConcurrency()
+        if (savedConcurrency != null) {
+          useWikiStore.getState().setIngestConcurrency(savedConcurrency)
         }
         console.log("[API] Config reload complete")
       } catch (err) {
@@ -510,6 +515,14 @@ function App() {
         }
         const savedGeneral = await loadGeneralConfig()
         useWikiStore.getState().setGeneralConfig(savedGeneral)
+        try {
+          const savedIngestConcurrency = await loadIngestConcurrency()
+          if (savedIngestConcurrency != null) {
+            useWikiStore.getState().setIngestConcurrency(savedIngestConcurrency)
+          }
+        } catch (err) {
+          console.warn("[startup] failed to load ingest concurrency:", err)
+        }
         try {
           await invoke<string>("set_close_behavior", { value: savedGeneral.closeBehavior })
         } catch (err) {

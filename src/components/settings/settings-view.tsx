@@ -93,6 +93,7 @@ function initialDraft(
   llm: ReturnType<typeof useWikiStore.getState>["llmConfig"],
   embed: ReturnType<typeof useWikiStore.getState>["embeddingConfig"],
   multimodal: ReturnType<typeof useWikiStore.getState>["multimodalConfig"],
+  ingestConcurrency: number,
   outputLanguage: ReturnType<typeof useWikiStore.getState>["outputLanguage"],
   proxy: ReturnType<typeof useWikiStore.getState>["proxyConfig"],
   scheduledImport: ReturnType<typeof useWikiStore.getState>["scheduledImportConfig"],
@@ -149,6 +150,7 @@ function initialDraft(
     multimodalAzureModelFamily: multimodal.azureModelFamily ?? "auto",
     multimodalApiMode: multimodal.apiMode,
     multimodalConcurrency: multimodal.concurrency,
+    ingestConcurrency,
     outputLanguage,
     maxHistoryMessages,
     proxyEnabled: proxy.enabled,
@@ -197,6 +199,8 @@ export function SettingsView() {
   const setApiConfig = useWikiStore((s) => s.setApiConfig)
   const generalConfig = useWikiStore((s) => s.generalConfig)
   const setGeneralConfig = useWikiStore((s) => s.setGeneralConfig)
+  const ingestConcurrency = useWikiStore((s) => s.ingestConcurrency)
+  const setIngestConcurrency = useWikiStore((s) => s.setIngestConcurrency)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
   const setMaxHistoryMessages = useChatStore((s) => s.setMaxHistoryMessages)
   // Drives the red dot next to the "About" row in the settings
@@ -218,6 +222,7 @@ export function SettingsView() {
       llmConfig,
       embeddingConfig,
       multimodalConfig,
+      ingestConcurrency,
       outputLanguage,
       proxyConfig,
       scheduledImportConfig,
@@ -275,6 +280,7 @@ export function SettingsView() {
         llmConfig,
         embeddingConfig,
         multimodalConfig,
+        ingestConcurrency,
         outputLanguage,
         proxyConfig,
         scheduledImportConfig,
@@ -335,6 +341,7 @@ export function SettingsView() {
       loadApiConfig,
       saveGeneralConfig,
       loadGeneralConfig,
+      saveIngestConcurrency,
       saveZoomLevel,
       loadZoomLevel,
     } = await import("@/lib/project-store")
@@ -427,6 +434,7 @@ export function SettingsView() {
     setMineruConfig(newMineruConfig)
     setApiConfig(newApiConfig)
     setGeneralConfig(newGeneralConfig)
+    setIngestConcurrency(draft.ingestConcurrency)
 
     try {
       await saveLlmConfig(newLlm)
@@ -513,6 +521,7 @@ export function SettingsView() {
 
       // Apply zoom level
       useZoomStore.getState().setLevel(draft.zoomLevel)
+      await saveIngestConcurrency(draft.ingestConcurrency)
       await saveZoomLevel(draft.zoomLevel)
 
       setSaved(true)

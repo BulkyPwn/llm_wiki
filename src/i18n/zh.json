@@ -586,7 +586,9 @@
         "aiLanguageHint": "强制 AI 生成内容（chat 回复、wiki 页面、research 结果、lint 报告）使用指定语言。选 \"Auto\" 让 AI 跟随用户输入或源文档的语言。",
         "historyLength": "对话历史长度",
         "historyHint": "每次请求发给 AI 的历史消息条数。多 = 上下文更完整但更费 token。",
-        "historyCurrent": "当前 {{count}} 条消息（约 {{turns}} 轮对话）"
+        "historyCurrent": "当前 {{count}} 条消息（约 {{turns}} 轮对话）",
+        "ingestConcurrency": "Ingest 并发数",
+        "ingestConcurrencyHint": "Ingest 期间最大并行 LLM 请求数（页面合并 + 向量化）。高并发可加快高吞吐量端点的 ingest 速度。1 = 顺序执行。"
       },
       "interface": {
         "title": "界面",

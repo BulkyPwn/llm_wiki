@@ -122,6 +122,18 @@ export async function loadMultimodalConfig(): Promise<MultimodalConfig | null> {
   return (await store.get<MultimodalConfig>(MULTIMODAL_KEY)) ?? null
 }
 
+const INGEST_CONCURRENCY_KEY = "ingestConcurrency"
+
+export async function saveIngestConcurrency(concurrency: number): Promise<void> {
+  const store = await getStore()
+  await store.set(INGEST_CONCURRENCY_KEY, concurrency)
+}
+
+export async function loadIngestConcurrency(): Promise<number | null> {
+  const store = await getStore()
+  return (await store.get<number>(INGEST_CONCURRENCY_KEY)) ?? null
+}
+
 const MINERU_KEY = "mineruConfig"
 
 function normalizeMineruConfig(config: MineruConfig): MineruConfig {

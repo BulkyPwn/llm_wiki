@@ -586,7 +586,9 @@
         "aiLanguageHint": "Force AI-generated content (chat replies, wiki pages, research output, lint reports) to use the selected language. Pick \"Auto\" to let the AI follow the user's input or source document language.",
         "historyLength": "Conversation History Length",
         "historyHint": "Number of prior messages sent to the AI on each request. More = richer context but more tokens.",
-        "historyCurrent": "Currently {{count}} messages (about {{turns}} turns)"
+        "historyCurrent": "Currently {{count}} messages (about {{turns}} turns)",
+        "ingestConcurrency": "Ingest concurrency",
+        "ingestConcurrencyHint": "Max parallel LLM requests during ingest (page merge + embedding). Higher values speed up ingest on high-throughput endpoints. 1 = sequential."
       },
       "interface": {
         "title": "Interface",
