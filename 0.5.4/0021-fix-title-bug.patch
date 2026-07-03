@@ -1,0 +1,24 @@
+From df660f9d871d70f4580615b86538902ed26b67e5 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Fri, 3 Jul 2026 10:48:56 +0800
+Subject: [PATCH 21/21] fix title bug
+
+---
+ src-tauri/tauri.windows.conf.json | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src-tauri/tauri.windows.conf.json b/src-tauri/tauri.windows.conf.json
+index 5a3afd6..6380199 100644
+--- a/src-tauri/tauri.windows.conf.json
++++ b/src-tauri/tauri.windows.conf.json
+@@ -3,6 +3,7 @@
+     "windows": [
+       {
+         "label": "main",
++        "title": "LLM Wiki",
+         "hiddenTitle": false,
+         "titleBarStyle": "Visible"
+       }
+-- 
+2.54.0.windows.1
+
