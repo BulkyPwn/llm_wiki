@@ -519,6 +519,7 @@ describe("autoIngest source summary paths", () => {
         enabled: true,
         token: "mineru-token",
         modelVersion: "vlm",
+        apiBase: "https://mineru.net/api/v4",
       },
     })
     mockParseWithMineru.mockRejectedValueOnce(new Error("network failure from MinerU"))
@@ -550,6 +551,7 @@ describe("autoIngest source summary paths", () => {
         enabled: true,
         token: "mineru-token",
         modelVersion: "vlm",
+        apiBase: "https://mineru.net/api/v4",
       },
     })
     const controller = new AbortController()
