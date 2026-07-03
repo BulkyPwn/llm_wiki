@@ -392,7 +392,7 @@ export async function clearCompletedTasks(): Promise<void> {
  */
 export async function cancelAllTasks(): Promise<number> {
   // Abort all running tasks
-  for (const [taskId, ctrl] of taskAbortControllers) {
+  for (const [, ctrl] of taskAbortControllers) {
     ctrl.abort()
   }
   taskAbortControllers.clear()
