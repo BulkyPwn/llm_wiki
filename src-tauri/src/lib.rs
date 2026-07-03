@@ -15,6 +15,10 @@ use tauri::Manager;
 struct CloseBehaviorState(Mutex<String>);
 struct TrayAvailabilityState(Mutex<bool>);
 
+fn is_headless() -> bool {
+    std::env::var("LLM_WIKI_HEADLESS").is_ok_and(|v| !v.is_empty())
+}
+
 #[tauri::command]
 fn clip_server_status() -> String {
     run_guarded("clip_server_status", || {
@@ -172,6 +176,10 @@ fn tray_available<R: tauri::Runtime>(window: &tauri::Window<R>) -> bool {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if is_headless() {
+                eprintln!("[headless] single-instance callback: headless mode, window stays hidden");
+                return;
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();
@@ -243,7 +251,7 @@ pub fn run() {
                 }
             }
 
-            if std::env::var("LLM_WIKI_HEADLESS").map_or(true, |v| v.is_empty()) {
+            if !is_headless() {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     eprintln!("[headless] Window shown (normal mode)");
@@ -369,10 +377,14 @@ pub fn run() {
             } = event
             {
                 if !has_visible_windows {
-                    use tauri::Manager;
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                    if is_headless() {
+                        eprintln!("[headless] Reopen event ignored (headless mode)");
+                    } else {
+                        use tauri::Manager;
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
                     }
                 }
             }
