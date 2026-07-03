@@ -1,0 +1,25 @@
+From 581255cbf8a8d0e2885bb9dff8045c914f74726c Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Fri, 3 Jul 2026 17:33:56 +0800
+Subject: [PATCH 23/23] lto thin build
+
+---
+ src-tauri/Cargo.toml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index 8fc8491..5183255 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -73,7 +73,7 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+ 
+ [profile.release]
+ codegen-units = 1
+-lto = true
++lto = "thin"
+ opt-level = "s"
+ # Unwind (not abort) so third-party parser panics can be caught at the
+ # Tauri command boundary via panic_guard and turned into errors. Slightly
+-- 
+2.54.0.windows.1
+

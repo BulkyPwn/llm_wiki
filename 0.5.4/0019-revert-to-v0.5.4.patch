@@ -1,7 +1,7 @@
 From 6c271e3d518aa2f4b05289a17d18e4e86787d15b Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Fri, 3 Jul 2026 09:40:18 +0800
-Subject: [PATCH 19/22] revert to v0.5.4
+Subject: [PATCH 19/23] revert to v0.5.4
 
 ---
  package.json         | 2 +-

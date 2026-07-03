@@ -1,7 +1,7 @@
 From 889e6bb2e7d0b2c83a3512ffcd309b2b30b20085 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Mon, 8 Jun 2026 20:52:55 +0800
-Subject: [PATCH 06/22] modify productName
+Subject: [PATCH 06/23] modify productName
 
 ---
  src-tauri/tauri.conf.json | 2 +-
