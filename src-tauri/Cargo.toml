@@ -73,7 +73,7 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 
 [profile.release]
 codegen-units = 1
-lto = true
+lto = "thin"
 opt-level = "s"
 # Unwind (not abort) so third-party parser panics can be caught at the
 # Tauri command boundary via panic_guard and turned into errors. Slightly
