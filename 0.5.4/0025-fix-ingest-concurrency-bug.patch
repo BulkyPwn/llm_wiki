@@ -1,0 +1,25 @@
+From 563e7e3fb3b014963634b3811a906608ca090e00 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Fri, 3 Jul 2026 20:03:43 +0800
+Subject: [PATCH 25/25] fix ingest concurrency bug
+
+---
+ src/lib/ingest-queue.ts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/lib/ingest-queue.ts b/src/lib/ingest-queue.ts
+index 5402646..e01727b 100644
+--- a/src/lib/ingest-queue.ts
++++ b/src/lib/ingest-queue.ts
+@@ -392,7 +392,7 @@ export async function clearCompletedTasks(): Promise<void> {
+  */
+ export async function cancelAllTasks(): Promise<number> {
+   // Abort all running tasks
+-  for (const [taskId, ctrl] of taskAbortControllers) {
++  for (const [, ctrl] of taskAbortControllers) {
+     ctrl.abort()
+   }
+   taskAbortControllers.clear()
+-- 
+2.54.0.windows.1
+

@@ -1,7 +1,7 @@
 From 06b71ca858647b80a31ecd36affeb2fca4a91664 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Thu, 2 Jul 2026 22:20:14 +0800
-Subject: [PATCH 18/23] support custom MinerU API configure
+Subject: [PATCH 18/25] support custom MinerU API configure
 
 ---
  .../settings/sections/mineru-section.tsx      | 24 +++++++++++++-

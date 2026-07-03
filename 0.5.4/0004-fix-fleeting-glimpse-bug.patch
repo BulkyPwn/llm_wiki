@@ -1,7 +1,7 @@
 From ba3c0e35477e4b23d55477b7d9badd5af7df5735 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Tue, 2 Jun 2026 15:45:45 +0800
-Subject: [PATCH 04/23] fix fleeting glimpse bug
+Subject: [PATCH 04/25] fix fleeting glimpse bug
 
 ---
  src-tauri/src/lib.rs      | 8 +++++---

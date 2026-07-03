@@ -1,7 +1,7 @@
 From 581255cbf8a8d0e2885bb9dff8045c914f74726c Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Fri, 3 Jul 2026 17:33:56 +0800
-Subject: [PATCH 23/23] lto thin build
+Subject: [PATCH 23/25] lto thin build
 
 ---
  src-tauri/Cargo.toml | 2 +-
