@@ -107,6 +107,8 @@ beforeEach(async () => {
     customEndpoint: "",
     maxContextSize: 128000,
   })
+  // Default: sequential processing for deterministic test behavior.
+  useWikiStore.getState().setIngestConcurrency(1)
 
   await activateProject()
 })
