@@ -1,0 +1,435 @@
+From 06b71ca858647b80a31ecd36affeb2fca4a91664 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Thu, 2 Jul 2026 22:20:14 +0800
+Subject: [PATCH 18/19] support custom MinerU API configure
+
+---
+ .../settings/sections/mineru-section.tsx      | 24 +++++++++++++-
+ src/components/settings/settings-types.ts     |  1 +
+ src/components/settings/settings-view.tsx     |  2 ++
+ src/i18n/en.json                              |  2 ++
+ src/i18n/zh.json                              |  2 ++
+ src/lib/mineru.test.ts                        | 11 +++++++
+ src/lib/mineru.ts                             | 33 ++++++++++++-------
+ src/lib/project-store.test.ts                 | 30 +++++++++++++++++
+ src/lib/project-store.ts                      |  1 +
+ src/stores/wiki-store.ts                      |  3 +-
+ 10 files changed, 96 insertions(+), 13 deletions(-)
+
+diff --git a/src/components/settings/sections/mineru-section.tsx b/src/components/settings/sections/mineru-section.tsx
+index 638295a..aee1d6d 100644
+--- a/src/components/settings/sections/mineru-section.tsx
++++ b/src/components/settings/sections/mineru-section.tsx
+@@ -24,7 +24,7 @@ export function MineruSection({ draft, setDraft }: Props) {
+     setTestState("running")
+     setTestError("")
+     try {
+-      await testMineruConnection(draft.mineruToken.trim())
++      await testMineruConnection(draft.mineruToken.trim(), draft.mineruApiBase.trim())
+       setTestState("success")
+     } catch (err) {
+       setTestState("failed")
+@@ -113,6 +113,28 @@ export function MineruSection({ draft, setDraft }: Props) {
+               })}
+             </p>
+           </div>
++
++          <div className="space-y-2">
++            <Label htmlFor="mineru-api-base">
++              {t("settings.sections.mineru.apiBase", { defaultValue: "API Endpoint" })}
++            </Label>
++            <Input
++              id="mineru-api-base"
++              type="url"
++              value={draft.mineruApiBase}
++              onChange={(e) => {
++                setDraft("mineruApiBase", e.target.value)
++                setTestState("idle")
++              }}
++              placeholder="https://mineru.net/api/v4"
++            />
++            <p className="text-xs text-muted-foreground">
++              {t("settings.sections.mineru.apiBaseHint", {
++                defaultValue: "Custom MinerU API endpoint. Leave empty to use the default cloud service.",
++              })}
++            </p>
++          </div>
++
+           <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+             {t("settings.sections.mineru.testQuotaNotice", {
+               defaultValue:
+diff --git a/src/components/settings/settings-types.ts b/src/components/settings/settings-types.ts
+index 3ea115c..b3f1756 100644
+--- a/src/components/settings/settings-types.ts
++++ b/src/components/settings/settings-types.ts
+@@ -87,6 +87,7 @@ export interface SettingsDraft {
+   mineruEnabled: boolean
+   mineruToken: string
+   mineruModelVersion: MineruModelVersion
++  mineruApiBase: string
+ 
+   // Local HTTP API server
+   apiEnabled: boolean
+diff --git a/src/components/settings/settings-view.tsx b/src/components/settings/settings-view.tsx
+index b5a3eda..85ab147 100644
+--- a/src/components/settings/settings-view.tsx
++++ b/src/components/settings/settings-view.tsx
+@@ -168,6 +168,7 @@ function initialDraft(
+     mineruEnabled: mineru.enabled,
+     mineruToken: mineru.token,
+     mineruModelVersion: mineru.modelVersion,
++    mineruApiBase: mineru.apiBase,
+     apiEnabled: apiConfig.enabled,
+     apiAllowUnauthenticated: apiConfig.allowUnauthenticated,
+     apiAllowLanAccess: apiConfig.allowLanAccess,
+@@ -419,6 +420,7 @@ export function SettingsView() {
+       enabled: draft.mineruEnabled,
+       token: draft.mineruToken.trim(),
+       modelVersion: draft.mineruModelVersion,
++      apiBase: draft.mineruApiBase.trim() || "https://mineru.net/api/v4",
+     }
+     const newApiConfig = {
+       enabled: draft.apiEnabled,
+diff --git a/src/i18n/en.json b/src/i18n/en.json
+index 36c56cb..9f1a9f8 100644
+--- a/src/i18n/en.json
++++ b/src/i18n/en.json
+@@ -684,6 +684,8 @@
+         "modelVlm": "VLM (Recommended, best for complex layouts)",
+         "modelPipeline": "Pipeline (Faster)",
+         "modelHint": "PDF parsing supports pipeline and vlm. MinerU-HTML is for HTML files and is not used here.",
++        "apiBase": "API Endpoint",
++        "apiBaseHint": "Custom MinerU API endpoint. Leave empty to use the default cloud service.",
+         "test": "Test Connection",
+         "testQuotaNotice": "Connection test submits a small demo file to MinerU and may consume a small amount of quota.",
+         "testing": "Testing...",
+diff --git a/src/i18n/zh.json b/src/i18n/zh.json
+index 99dec99..c420ec4 100644
+--- a/src/i18n/zh.json
++++ b/src/i18n/zh.json
+@@ -684,6 +684,8 @@
+         "modelVlm": "VLM（推荐，适合复杂排版）",
+         "modelPipeline": "Pipeline（更快）",
+         "modelHint": "PDF 解析仅使用 pipeline 或 vlm。MinerU-HTML 用于 HTML 文件，这里不会使用。",
++        "apiBase": "API 地址",
++        "apiBaseHint": "自定义 MinerU API 地址。留空使用默认云服务。",
+         "test": "测试连接",
+         "testQuotaNotice": "连接测试会向 MinerU 提交一个小型示例文件，可能消耗少量额度。",
+         "testing": "测试中...",
+diff --git a/src/lib/mineru.test.ts b/src/lib/mineru.test.ts
+index a982050..073b810 100644
+--- a/src/lib/mineru.test.ts
++++ b/src/lib/mineru.test.ts
+@@ -354,6 +354,7 @@ describe("parseWithMineru", () => {
+     await expect(parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "mineru-html" as "vlm",
+     }, "/tmp/doc.pdf")).rejects.toThrow("pipeline or vlm")
+ 
+@@ -367,6 +368,7 @@ describe("parseWithMineru", () => {
+     await expect(parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "vlm",
+     }, "/tmp/large.pdf")).rejects.toThrow("200 MB")
+ 
+@@ -381,6 +383,7 @@ describe("parseWithMineru", () => {
+     await expect(parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "vlm",
+     }, "/tmp/doc.pdf", undefined, undefined, controller.signal)).rejects.toThrow("cancelled")
+ 
+@@ -397,6 +400,7 @@ describe("parseWithMineru", () => {
+     await expect(parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "vlm",
+     }, "/tmp/doc.pdf")).rejects.toThrow("upload URL")
+   })
+@@ -426,6 +430,7 @@ describe("parseWithMineru", () => {
+     await expect(parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "vlm",
+     }, "/tmp/doc.pdf")).resolves.toBe("parsed markdown")
+ 
+@@ -458,6 +463,7 @@ describe("parseWithMineru", () => {
+     await expect(parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "vlm",
+     }, "/tmp/doc.pdf", undefined, undefined, undefined, {
+       projectPath: "/project",
+@@ -494,6 +500,7 @@ describe("parseWithMineru", () => {
+     const result = await parseWithMineruResult({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "vlm",
+     }, "/tmp/doc.pdf", undefined, undefined, undefined, {
+       projectPath: "/project",
+@@ -523,6 +530,7 @@ describe("parseWithMineru", () => {
+     await expect(parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "pipeline",
+     }, "/tmp/doc.pdf", "https://example.test/doc.pdf")).resolves.toBe("url markdown")
+ 
+@@ -554,6 +562,7 @@ describe("parseWithMineru", () => {
+     await expect(parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "vlm",
+     }, "/tmp/doc.pdf")).rejects.toThrow("parse exploded")
+   })
+@@ -576,6 +585,7 @@ describe("parseWithMineru", () => {
+     const result = parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "vlm",
+     }, "/tmp/doc.pdf", undefined, undefined, controller.signal)
+ 
+@@ -627,6 +637,7 @@ describe("parseWithMineru", () => {
+     await expect(parseWithMineru({
+       enabled: true,
+       token: "token",
++      apiBase: "https://mineru.net/api/v4",
+       modelVersion: "vlm",
+     }, "/tmp/doc.pdf", undefined, (msg) => progress.push(msg))).resolves.toBe("parsed markdown")
+ 
+diff --git a/src/lib/mineru.ts b/src/lib/mineru.ts
+index 242256c..8483b5a 100644
+--- a/src/lib/mineru.ts
++++ b/src/lib/mineru.ts
+@@ -5,7 +5,7 @@ import { getHttpFetch } from "@/lib/tauri-fetch"
+ import { getFileName, normalizePath } from "@/lib/path-utils"
+ import type { SavedImage } from "@/lib/extract-source-images"
+ 
+-const API_BASE = "https://mineru.net/api/v4"
++const DEFAULT_API_BASE = "https://mineru.net/api/v4"
+ const POLL_INTERVAL_MS = 3_000
+ const POLL_TIMEOUT_MS = 300_000 // 5 minutes
+ const MAX_ACCURATE_PARSE_BYTES = 200 * 1024 * 1024
+@@ -21,6 +21,10 @@ const MINERU_IMAGE_EXTS = new Set([
+   "tiff",
+ ])
+ 
++function getApiBase(config: MineruConfig): string {
++  return config.apiBase?.trim() || DEFAULT_API_BASE
++}
++
+ // ── Types ──
+ 
+ interface TaskResponse {
+@@ -377,11 +381,12 @@ async function submitUrlTask(
+   token: string,
+   url: string,
+   modelVersion: string,
++  apiBase: string,
+   signal?: AbortSignal,
+ ): Promise<string> {
+   const httpFetch = await getHttpFetch()
+   throwIfAborted(signal)
+-  const res = await httpFetch(`${API_BASE}/extract/task`, {
++  const res = await httpFetch(`${apiBase}/extract/task`, {
+     method: "POST",
+     headers: await mineruHeaders(token),
+     signal,
+@@ -398,6 +403,7 @@ async function uploadFileForTask(
+   fileName: string,
+   fileBase64: string,
+   modelVersion: string,
++  apiBase: string,
+   signal?: AbortSignal,
+ ): Promise<{ batchId: string; uploadUrl: string }> {
+   const httpFetch = await getHttpFetch()
+@@ -405,7 +411,7 @@ async function uploadFileForTask(
+   throwIfAborted(signal)
+ 
+   // Step 1: Get upload URL
+-  const res = await httpFetch(`${API_BASE}/file-urls/batch`, {
++  const res = await httpFetch(`${apiBase}/file-urls/batch`, {
+     method: "POST",
+     headers,
+     signal,
+@@ -456,14 +462,14 @@ function waitForPollInterval(signal?: AbortSignal): Promise<void> {
+   })
+ }
+ 
+-async function pollTask(token: string, taskId: string, signal?: AbortSignal): Promise<string> {
++async function pollTask(token: string, taskId: string, apiBase: string, signal?: AbortSignal): Promise<string> {
+   const httpFetch = await getHttpFetch()
+   const headers = await mineruHeaders(token)
+   const start = Date.now()
+ 
+   while (Date.now() - start < POLL_TIMEOUT_MS) {
+     throwIfAborted(signal)
+-    const res = await httpFetch(`${API_BASE}/extract/task/${taskId}`, {
++    const res = await httpFetch(`${apiBase}/extract/task/${taskId}`, {
+       headers,
+       signal,
+     })
+@@ -487,6 +493,7 @@ async function pollTask(token: string, taskId: string, signal?: AbortSignal): Pr
+ async function pollBatchTask(
+   token: string,
+   batchId: string,
++  apiBase: string,
+   signal?: AbortSignal,
+ ): Promise<string> {
+   const httpFetch = await getHttpFetch()
+@@ -496,7 +503,7 @@ async function pollBatchTask(
+   while (Date.now() - start < POLL_TIMEOUT_MS) {
+     throwIfAborted(signal)
+     const res = await httpFetch(
+-      `${API_BASE}/extract-results/batch/${batchId}`,
++      `${apiBase}/extract-results/batch/${batchId}`,
+       { headers, signal },
+     )
+     if (!res.ok) throw new Error(`MinerU batch poll failed: HTTP ${res.status}`)
+@@ -657,13 +664,15 @@ export async function parseWithMineruResult(
+     throw new Error("MinerU PDF parsing supports only pipeline or vlm model versions")
+   }
+ 
++  const apiBase = getApiBase(config)
++
+   let zipUrl: string
+ 
+   if (sourceUrl) {
+     onProgress?.("Submitting URL to MinerU...")
+-    const taskId = await submitUrlTask(config.token, sourceUrl, config.modelVersion, signal)
++    const taskId = await submitUrlTask(config.token, sourceUrl, config.modelVersion, apiBase, signal)
+     onProgress?.("Waiting for MinerU to finish...")
+-    zipUrl = await pollTask(config.token, taskId, signal)
++    zipUrl = await pollTask(config.token, taskId, apiBase, signal)
+   } else {
+     onProgress?.("Uploading file to MinerU...")
+     throwIfAborted(signal)
+@@ -682,10 +691,11 @@ export async function parseWithMineruResult(
+       fileName,
+       base64,
+       config.modelVersion,
++      apiBase,
+       signal,
+     )
+     onProgress?.("Waiting for MinerU to finish...")
+-    zipUrl = await pollBatchTask(config.token, batchId, signal)
++    zipUrl = await pollBatchTask(config.token, batchId, apiBase, signal)
+   }
+ 
+   onProgress?.("Downloading parsed result...")
+@@ -699,9 +709,10 @@ export async function parseWithMineruResult(
+  * Test MinerU API connectivity by submitting a minimal task.
+  * Returns true if the token is valid.
+  */
+-export async function testMineruConnection(token: string): Promise<void> {
++export async function testMineruConnection(token: string, apiBase?: string): Promise<void> {
++  const base = apiBase?.trim() || DEFAULT_API_BASE
+   const httpFetch = await getHttpFetch()
+-  const res = await httpFetch(`${API_BASE}/extract/task`, {
++  const res = await httpFetch(`${base}/extract/task`, {
+     method: "POST",
+     headers: await mineruHeaders(token),
+     body: JSON.stringify({
+diff --git a/src/lib/project-store.test.ts b/src/lib/project-store.test.ts
+index 0ca8301..1eb6b5b 100644
+--- a/src/lib/project-store.test.ts
++++ b/src/lib/project-store.test.ts
+@@ -7,10 +7,38 @@ describe("project-store MinerU config normalization", () => {
+       enabled: true,
+       token: "token-123",
+       modelVersion: "pipeline",
++      apiBase: "https://custom.example.com/api/v4",
+     })).toEqual({
+       enabled: true,
+       token: "token-123",
+       modelVersion: "pipeline",
++      apiBase: "https://custom.example.com/api/v4",
++    })
++  })
++
++  it("falls back to default apiBase when empty or missing", () => {
++    expect(__projectStoreTest.normalizeMineruConfig({
++      enabled: true,
++      token: "token-123",
++      modelVersion: "vlm",
++      apiBase: "",
++    })).toEqual({
++      enabled: true,
++      token: "token-123",
++      modelVersion: "vlm",
++      apiBase: "https://mineru.net/api/v4",
++    })
++
++    expect(__projectStoreTest.normalizeMineruConfig({
++      enabled: true,
++      token: "token-123",
++      modelVersion: "vlm",
++      apiBase: "   ",
++    })).toEqual({
++      enabled: true,
++      token: "token-123",
++      modelVersion: "vlm",
++      apiBase: "https://mineru.net/api/v4",
+     })
+   })
+ 
+@@ -19,10 +47,12 @@ describe("project-store MinerU config normalization", () => {
+       enabled: "yes" as unknown as boolean,
+       token: 123 as unknown as string,
+       modelVersion: "mineru-html" as "vlm",
++      apiBase: 456 as unknown as string,
+     })).toEqual({
+       enabled: false,
+       token: "",
+       modelVersion: "vlm",
++      apiBase: "https://mineru.net/api/v4",
+     })
+   })
+ })
+diff --git a/src/lib/project-store.ts b/src/lib/project-store.ts
+index 1ce973b..0c68ea2 100644
+--- a/src/lib/project-store.ts
++++ b/src/lib/project-store.ts
+@@ -141,6 +141,7 @@ function normalizeMineruConfig(config: MineruConfig): MineruConfig {
+     enabled: config.enabled === true,
+     token: typeof config.token === "string" ? config.token : "",
+     modelVersion: config.modelVersion === "pipeline" ? "pipeline" : "vlm",
++    apiBase: typeof config.apiBase === "string" && config.apiBase.trim() ? config.apiBase : "https://mineru.net/api/v4",
+   }
+ }
+ 
+diff --git a/src/stores/wiki-store.ts b/src/stores/wiki-store.ts
+index 7334f71..dbce4eb 100644
+--- a/src/stores/wiki-store.ts
++++ b/src/stores/wiki-store.ts
+@@ -282,6 +282,7 @@ export interface MineruConfig {
+   enabled: boolean
+   token: string
+   modelVersion: MineruModelVersion
++  apiBase: string
+ }
+ 
+ interface MultimodalConfig {
+@@ -561,7 +562,7 @@ export const useWikiStore = create<WikiState>((set) => ({
+   },
+ 
+   sourceWatchConfig: DEFAULT_SOURCE_WATCH_CONFIG,
+-  mineruConfig: { enabled: false, token: "", modelVersion: "vlm" },
++  mineruConfig: { enabled: false, token: "", modelVersion: "vlm", apiBase: "https://mineru.net/api/v4" },
+ 
+   // Default `enabled: true` preserves the pre-toggle behavior: anyone
+   // who already had `LLM_WIKI_API_TOKEN` set or `apiConfig.token`
+-- 
+2.54.0.windows.1
+

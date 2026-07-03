@@ -40,8 +40,8 @@
 | 文件 | 改动 |
 |------|------|
 | `.cargo/config.toml` | **新增**。Windows 构建使用 `rust-lld` 链接器 |
-| `Cargo.toml` | 版本 `0.5.4-1`；新增 `tauri-plugin-single-instance` 依赖 |
-| `tauri.conf.json` | 版本 `0.5.4.1`；`productName` → `LLM_Wiki`；窗口默认 `visible: false` |
+| `Cargo.toml` | 版本 `0.5.4`；新增 `tauri-plugin-single-instance` 依赖 |
+| `tauri.conf.json` | 版本 `0.5.4`；`productName` → `LLM_Wiki`；窗口默认 `visible: false` |
 
 ---
 
@@ -147,9 +147,9 @@
 
 | 文件 | 版本 |
 |------|------|
-| `package.json` | `0.5.4.1` |
-| `src-tauri/tauri.conf.json` | `0.5.4.1` |
-| `src-tauri/Cargo.toml` | `0.5.4-1`（Cargo semver 限制） |
+| `package.json` | `0.5.4` |
+| `src-tauri/tauri.conf.json` | `0.5.4` |
+| `src-tauri/Cargo.toml` | `0.5.4`（Cargo semver 限制） |
 
 ---
 

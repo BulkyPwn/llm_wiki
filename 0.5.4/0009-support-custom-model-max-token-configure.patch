@@ -1,7 +1,7 @@
 From 8920d77a12412555dba2f357e43fa493a6a26a34 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Thu, 2 Jul 2026 20:20:52 +0800
-Subject: [PATCH 09/17] support custom model max token configure
+Subject: [PATCH 09/19] support custom model max token configure
 
 ---
  .../sections/llm-provider-section.tsx         | 30 +++++++++++++++++++
