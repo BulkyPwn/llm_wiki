@@ -1,7 +1,7 @@
 From 8794918f762079985f6a2ffcdd56ecefd1656281 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Sat, 4 Jul 2026 15:11:23 +0800
-Subject: [PATCH 27/29] support speculative scan check
+Subject: [PATCH 27/30] support speculative scan check
 
 ---
  src/lib/ingest-queue.ts | 146 ++++++++++++++++++++++++++++++++++++++++

@@ -1,0 +1,47 @@
+From d8e8e966299251f02ac7369c2fee7c2a1975c110 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Sat, 4 Jul 2026 17:52:26 +0800
+Subject: [PATCH 30/30] fix headless mode fleeting glimpse bug again and again
+
+---
+ src-tauri/src/lib.rs | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 7801e52..190a64f 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -209,6 +209,18 @@ pub fn run() {
+         // from Rust, never the webview.
+         .plugin(tauri_plugin_http::init())
+         .setup(|app| {
++            // Headless guard: Windows WebView2 initialisation may briefly
++            // flash the window even when visible:false is configured.
++            // Call hide() at the very start of setup so the window is
++            // re-hidden before any other plugin or service has a chance
++            // to trigger a repaint.
++            if is_headless() {
++                if let Some(window) = app.get_webview_window("main") {
++                    let _ = window.hide();
++                }
++                eprintln!("[headless] Window hidden at setup start");
++            }
++
+             // Let the PDF extractor find the bundled pdfium dynamic
+             // library via Tauri's platform-correct resource path.
+             if let Ok(dir) = app.path().resource_dir() {
+@@ -267,6 +279,11 @@ pub fn run() {
+                     eprintln!("[headless] Window shown (normal mode)");
+                 }
+             } else {
++                // Final safety net: re-hide after all plugins and services
++                // (tray, API server, etc.) have finished initialising.
++                if let Some(window) = app.get_webview_window("main") {
++                    let _ = window.hide();
++                }
+                 eprintln!("[headless] Running headless (LLM_WIKI_HEADLESS is set), window stays hidden");
+             }
+ 
+-- 
+2.54.0.windows.1
+
