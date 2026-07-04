@@ -267,15 +267,6 @@ pub fn run() {
                     eprintln!("[headless] Window shown (normal mode)");
                 }
             } else {
-                // Explicitly hide the window after all plugins (including
-                // single-instance) have been initialized.  The single-
-                // instance plugin may fire its callback asynchronously
-                // even on the first launch on some platforms; this call
-                // acts as a safety net so headless mode is never
-                // accidentally broken by a plugin race.
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.hide();
-                }
                 eprintln!("[headless] Running headless (LLM_WIKI_HEADLESS is set), window stays hidden");
             }
 
