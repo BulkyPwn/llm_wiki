@@ -655,6 +655,7 @@
         "title": "关于",
         "description": "构建信息和运行时状态。",
         "version": "版本",
+        "buildTime": "构建时间",
         "clipServer": "Clip 服务",
         "apiServer": "API 服务",
         "apiDisabled": "已禁用",

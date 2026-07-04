@@ -655,6 +655,7 @@
         "title": "About",
         "description": "Build info and runtime status.",
         "version": "Version",
+        "buildTime": "Build Time",
         "clipServer": "Clip Server",
         "apiServer": "API Server",
         "apiDisabled": "disabled",

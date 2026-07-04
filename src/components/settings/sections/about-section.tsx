@@ -105,6 +105,14 @@ export function AboutSection() {
   })()
   const rows: Array<{ label: string; value: string; mono?: boolean }> = [
     { label: t("settings.sections.about.version"), value: `v${__APP_VERSION__}`, mono: true },
+    {
+      label: t("settings.sections.about.buildTime"),
+      // Render in the user's locale rather than raw ISO so it reads
+      // naturally. Falls back to the ISO string if the Date is invalid
+      // (defensive — should never happen since Vite injects a valid ISO).
+      value: formatBuildTime(__APP_BUILD_TIME__),
+      mono: true,
+    },
     { label: t("settings.sections.about.clipServer"), value: `${clipStatus}  @  127.0.0.1:19827`, mono: true },
     { label: t("settings.sections.about.apiServer"), value: `${apiStatusDisplay}  @  127.0.0.1:${API_SERVER_PORT}`, mono: true },
   ]
@@ -311,6 +319,15 @@ function UpdateAvailableBanner({
       </div>
     </div>
   )
+}
+
+/** Formats the build-time ISO timestamp for display in the user's
+ *  locale. Returns the raw string if parsing fails so we never
+ *  render "Invalid Date" in the UI. */
+function formatBuildTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString()
 }
 
 /** Translated relative-time formatter. Signature accepts a `t` passed
