@@ -1,0 +1,32 @@
+From 2391c39eba60dd1d006c4d3dabd23eaf4d065084 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Sat, 4 Jul 2026 15:17:26 +0800
+Subject: [PATCH 28/29] fix headless mode fleeting glimpse bug again
+
+---
+ src-tauri/src/lib.rs | 9 ---------
+ 1 file changed, 9 deletions(-)
+
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 7af2461..7801e52 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -267,15 +267,6 @@ pub fn run() {
+                     eprintln!("[headless] Window shown (normal mode)");
+                 }
+             } else {
+-                // Explicitly hide the window after all plugins (including
+-                // single-instance) have been initialized.  The single-
+-                // instance plugin may fire its callback asynchronously
+-                // even on the first launch on some platforms; this call
+-                // acts as a safety net so headless mode is never
+-                // accidentally broken by a plugin race.
+-                if let Some(window) = app.get_webview_window("main") {
+-                    let _ = window.hide();
+-                }
+                 eprintln!("[headless] Running headless (LLM_WIKI_HEADLESS is set), window stays hidden");
+             }
+ 
+-- 
+2.54.0.windows.1
+

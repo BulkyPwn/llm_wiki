@@ -1,0 +1,23 @@
+From 4b668f1836dbbfc2b99e0f0764187dffdca1e914 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Sat, 4 Jul 2026 15:24:22 +0800
+Subject: [PATCH 29/29] make build faster
+
+---
+ src-tauri/.cargo/config.toml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src-tauri/.cargo/config.toml b/src-tauri/.cargo/config.toml
+index 57747f7..ddbc9b5 100644
+--- a/src-tauri/.cargo/config.toml
++++ b/src-tauri/.cargo/config.toml
+@@ -1,2 +1,5 @@
+ [target.x86_64-pc-windows-msvc]
+ linker = "rust-lld"
++
++[build]
++jobs = 3
+\ No newline at end of file
+-- 
+2.54.0.windows.1
+

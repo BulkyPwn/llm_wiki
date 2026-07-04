@@ -1,7 +1,7 @@
 From 630456717dcac0847aa784058025c88f22981b13 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Wed, 17 Jun 2026 15:11:16 +0800
-Subject: [PATCH 10/26] add reload configure
+Subject: [PATCH 10/29] add reload configure
 
 ---
  src/App.tsx              |  8 ++++++++

@@ -1,7 +1,7 @@
 From a910b06782cb92436efc087161fae4d21aaa4649 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Fri, 3 Jul 2026 19:34:02 +0800
-Subject: [PATCH 24/26] fix kb ingest concurrency bug
+Subject: [PATCH 24/29] fix kb ingest concurrency bug
 
 ---
  src-tauri/src/lib.rs         |  16 +++
