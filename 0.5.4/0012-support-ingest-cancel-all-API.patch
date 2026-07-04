@@ -1,7 +1,7 @@
 From cec008c6511be950734d686a183ccb50d3cd96e7 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Wed, 24 Jun 2026 15:41:12 +0800
-Subject: [PATCH 12/30] support ingest cancel-all API
+Subject: [PATCH 12/31] support ingest cancel-all API
 
 ---
  src-tauri/src/api_server.rs | 18 ++++++++++++++++++

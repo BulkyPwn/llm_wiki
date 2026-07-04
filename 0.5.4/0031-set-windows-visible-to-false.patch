@@ -1,0 +1,26 @@
+From f224afbe4bd0931f9cf164a4faf4950f5e181fb3 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Sat, 4 Jul 2026 18:46:47 +0800
+Subject: [PATCH 31/31] set windows visible to false
+
+---
+ src-tauri/tauri.windows.conf.json | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src-tauri/tauri.windows.conf.json b/src-tauri/tauri.windows.conf.json
+index 6380199..2828c25 100644
+--- a/src-tauri/tauri.windows.conf.json
++++ b/src-tauri/tauri.windows.conf.json
+@@ -5,7 +5,8 @@
+         "label": "main",
+         "title": "LLM Wiki",
+         "hiddenTitle": false,
+-        "titleBarStyle": "Visible"
++        "titleBarStyle": "Visible",
++        "visible": false
+       }
+     ]
+   },
+-- 
+2.54.0.windows.1
+

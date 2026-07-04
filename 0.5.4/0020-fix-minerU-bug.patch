@@ -1,7 +1,7 @@
 From 4709fb029276428697828fa7b0e805d486790ccf Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Fri, 3 Jul 2026 10:20:23 +0800
-Subject: [PATCH 20/30] fix minerU bug
+Subject: [PATCH 20/31] fix minerU bug
 
 ---
  src/lib/ingest-source-path-collision.test.ts | 2 ++
