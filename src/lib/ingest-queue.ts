@@ -4,6 +4,8 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { normalizePath, isAbsolutePath } from "@/lib/path-utils"
 import { getProjectPathById } from "@/lib/project-identity"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
+import { checkIngestCache } from "@/lib/ingest-cache"
+import { sourceIdentityForPath } from "@/lib/source-identity"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -57,6 +59,23 @@ let processedSinceDrain = false
 // Abort controller for the review-sweep LLM call so switching projects
 // cancels a long-running judgment instead of burning tokens.
 let sweepAbortController: AbortController | null = null
+
+// ── Speculative scan state ───────────────────────────────────────────────
+
+/** Timer that triggers a speculative cache-lookup scan when concurrency
+ *  is saturated and pending tasks are backing up. Fires after 10s of
+ *  sustained saturation. */
+let speculativeScanTimer: ReturnType<typeof setTimeout> | null = null
+/** Guard that prevents overlapping speculative scans. */
+let speculativeScanRunning = false
+
+function clearSpeculativeScan(): void {
+  if (speculativeScanTimer) {
+    clearTimeout(speculativeScanTimer)
+    speculativeScanTimer = null
+  }
+  speculativeScanRunning = false
+}
 
 function resetQueueAccounting(): void {
   completedSinceIdle = 0
@@ -431,6 +450,7 @@ export async function cancelAllTasks(): Promise<number> {
  */
 export function pauseProcessing(): void {
   clearUsageLimitAutoResume()
+  clearSpeculativeScan()
   paused = true
   // Abort all running tasks and return them to pending.
   // Do NOT decrement activeCount here — the in-flight processTask
@@ -520,6 +540,7 @@ export function getQueueSummary(): {
  */
 export function clearQueueState(): void {
   clearUsageLimitAutoResume()
+  clearSpeculativeScan()
   for (const [, ctrl] of taskAbortControllers) {
     ctrl.abort()
   }
@@ -550,6 +571,7 @@ export function clearQueueState(): void {
  */
 export async function pauseQueue(): Promise<void> {
   clearUsageLimitAutoResume()
+  clearSpeculativeScan()
   if (!currentProjectId || !currentProjectPath) {
     // Nothing to pause (no active project)
     return
@@ -707,6 +729,106 @@ async function onQueueDrained(projectId: string, projectPath: string): Promise<v
   }
 }
 
+// ── Speculative scan ───────────────────────────────────────────────────
+
+const SPECULATIVE_SCAN_DELAY_MS = 10_000
+
+function scheduleSpeculativeScan(projectId: string): void {
+  if (speculativeScanTimer) return
+  speculativeScanTimer = setTimeout(() => {
+    runSpeculativeScan(projectId).catch((err) =>
+      console.warn("[Ingest Queue] Speculative scan failed:", err),
+    )
+  }, SPECULATIVE_SCAN_DELAY_MS)
+}
+
+/**
+ * Speculative scan: when concurrency is saturated and pending tasks are
+ * backing up, read each pending file's content and check against the
+ * ingest cache. Cache hits (SHA-256 matches AND all previously-written
+ * files still exist on disk) are removed from the queue without
+ * consuming an LLM slot.
+ *
+ * This is especially valuable during rescan, where most files have
+ * already been ingested and would otherwise wait for a slot only to
+ * be skipped by the normal cache-hit path inside processTask.
+ */
+async function runSpeculativeScan(projectId: string): Promise<void> {
+  speculativeScanTimer = null
+  if (currentProjectId !== projectId) return
+  if (paused) return
+  if (speculativeScanRunning) return
+
+  speculativeScanRunning = true
+  const pp = currentProjectPath
+  let removed = 0
+
+  try {
+    const pendingTasks = queue.filter(
+      (t) =>
+        t.projectId === projectId &&
+        t.status === "pending" &&
+        !restoredPausedTaskIds.has(t.id),
+    )
+    if (pendingTasks.length === 0) return
+
+    console.log(
+      `[Ingest Queue] Speculative scan: checking ${pendingTasks.length} pending task(s) against ingest cache`,
+    )
+
+    for (const task of pendingTasks) {
+      // Stale-context / pause guard — abort mid-scan.
+      if (currentProjectId !== projectId || paused) break
+
+      const fullPath = isAbsolutePath(task.sourcePath)
+        ? normalizePath(task.sourcePath)
+        : `${pp}/${task.sourcePath}`
+
+      let content: string
+      try {
+        content = await readFile(fullPath)
+      } catch {
+        // File unreadable or deleted — leave in queue for processTask.
+        continue
+      }
+
+      const sourceIdentity = sourceIdentityForPath(pp, fullPath)
+      const cachedFiles = await checkIngestCache(pp, sourceIdentity, content)
+
+      if (cachedFiles !== null) {
+        queue = queue.filter((t) => t.id !== task.id)
+        removed++
+      }
+    }
+
+    if (removed > 0) {
+      await saveQueue(pp)
+      console.log(
+        `[Ingest Queue] Speculative scan: removed ${removed} already-ingested file(s) from queue`,
+      )
+    }
+  } catch (err) {
+    console.warn("[Ingest Queue] Speculative scan error:", err)
+  } finally {
+    speculativeScanRunning = false
+  }
+
+  // Re-schedule if still saturated with pending tasks.
+  if (
+    currentProjectId === projectId &&
+    !paused &&
+    activeCount >= getMaxConcurrent() &&
+    queue.some(
+      (t) =>
+        t.projectId === projectId &&
+        t.status === "pending" &&
+        !restoredPausedTaskIds.has(t.id),
+    )
+  ) {
+    scheduleSpeculativeScan(projectId)
+  }
+}
+
 async function processNext(projectId: string): Promise<void> {
   // Stale-context guard: processNext may be invoked by an orphaned
   // recursion from a previous project. If we're no longer active, bail.
@@ -721,8 +843,11 @@ async function processNext(projectId: string): Promise<void> {
     // If the in-flight task completed despite the abort and nothing is left,
     // clear it so a later explicit import can run normally.
     paused = false
+    clearSpeculativeScan()
     return
   }
+
+  let startedTask = false
 
   // Keep starting tasks while we're under the concurrency limit.
   while (activeCount < getMaxConcurrent()) {
@@ -749,11 +874,32 @@ async function processNext(projectId: string): Promise<void> {
       break
     }
 
+    startedTask = true
     activeCount++
     // Fire-and-forget: each task runs concurrently.
     processTask(projectId, next).catch((err) => {
       console.error(`[Ingest Queue] Unhandled task error for ${next.id}:`, err)
     })
+  }
+
+  // ── Speculative scan scheduling ──
+  // If a slot opened up and we started a task, cancel any pending scan.
+  // If we're saturated with non-restored pending tasks waiting, schedule
+  // a scan to pre-filter already-ingested files from the backlog.
+  if (startedTask) {
+    clearSpeculativeScan()
+  } else {
+    const hasPendingNotRestored = queue.some(
+      (t) =>
+        t.projectId === projectId &&
+        t.status === "pending" &&
+        !restoredPausedTaskIds.has(t.id),
+    )
+    if (hasPendingNotRestored && activeCount >= getMaxConcurrent()) {
+      scheduleSpeculativeScan(projectId)
+    } else {
+      clearSpeculativeScan()
+    }
   }
 }
 
