@@ -209,6 +209,18 @@ pub fn run() {
         // from Rust, never the webview.
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
+            // Headless guard: Windows WebView2 initialisation may briefly
+            // flash the window even when visible:false is configured.
+            // Call hide() at the very start of setup so the window is
+            // re-hidden before any other plugin or service has a chance
+            // to trigger a repaint.
+            if is_headless() {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+                eprintln!("[headless] Window hidden at setup start");
+            }
+
             // Let the PDF extractor find the bundled pdfium dynamic
             // library via Tauri's platform-correct resource path.
             if let Ok(dir) = app.path().resource_dir() {
@@ -267,6 +279,11 @@ pub fn run() {
                     eprintln!("[headless] Window shown (normal mode)");
                 }
             } else {
+                // Final safety net: re-hide after all plugins and services
+                // (tray, API server, etc.) have finished initialising.
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
                 eprintln!("[headless] Running headless (LLM_WIKI_HEADLESS is set), window stays hidden");
             }
 
