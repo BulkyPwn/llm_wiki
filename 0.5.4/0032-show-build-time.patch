@@ -1,0 +1,101 @@
+From d518cf995c0891435161ee5b593127dda3be7307 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Sat, 4 Jul 2026 18:59:08 +0800
+Subject: [PATCH 32/32] show build time
+
+---
+ .../settings/sections/about-section.tsx         | 17 +++++++++++++++++
+ src/i18n/en.json                                |  1 +
+ src/i18n/zh.json                                |  1 +
+ src/vite-env.d.ts                               |  3 +++
+ vite.config.ts                                  |  4 ++++
+ 5 files changed, 26 insertions(+)
+
+diff --git a/src/components/settings/sections/about-section.tsx b/src/components/settings/sections/about-section.tsx
+index a93a30a..b603a2e 100644
+--- a/src/components/settings/sections/about-section.tsx
++++ b/src/components/settings/sections/about-section.tsx
+@@ -105,6 +105,14 @@ export function AboutSection() {
+   })()
+   const rows: Array<{ label: string; value: string; mono?: boolean }> = [
+     { label: t("settings.sections.about.version"), value: `v${__APP_VERSION__}`, mono: true },
++    {
++      label: t("settings.sections.about.buildTime"),
++      // Render in the user's locale rather than raw ISO so it reads
++      // naturally. Falls back to the ISO string if the Date is invalid
++      // (defensive — should never happen since Vite injects a valid ISO).
++      value: formatBuildTime(__APP_BUILD_TIME__),
++      mono: true,
++    },
+     { label: t("settings.sections.about.clipServer"), value: `${clipStatus}  @  127.0.0.1:19827`, mono: true },
+     { label: t("settings.sections.about.apiServer"), value: `${apiStatusDisplay}  @  127.0.0.1:${API_SERVER_PORT}`, mono: true },
+   ]
+@@ -313,6 +321,15 @@ function UpdateAvailableBanner({
+   )
+ }
+ 
++/** Formats the build-time ISO timestamp for display in the user's
++ *  locale. Returns the raw string if parsing fails so we never
++ *  render "Invalid Date" in the UI. */
++function formatBuildTime(iso: string): string {
++  const d = new Date(iso)
++  if (Number.isNaN(d.getTime())) return iso
++  return d.toLocaleString()
++}
++
+ /** Translated relative-time formatter. Signature accepts a `t` passed
+  *  in from the caller so the function stays pure and unit-testable. */
+ function formatRelative(timestamp: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
+diff --git a/src/i18n/en.json b/src/i18n/en.json
+index 9f1a9f8..3271016 100644
+--- a/src/i18n/en.json
++++ b/src/i18n/en.json
+@@ -655,6 +655,7 @@
+         "title": "About",
+         "description": "Build info and runtime status.",
+         "version": "Version",
++        "buildTime": "Build Time",
+         "clipServer": "Clip Server",
+         "apiServer": "API Server",
+         "apiDisabled": "disabled",
+diff --git a/src/i18n/zh.json b/src/i18n/zh.json
+index c420ec4..54c744d 100644
+--- a/src/i18n/zh.json
++++ b/src/i18n/zh.json
+@@ -655,6 +655,7 @@
+         "title": "关于",
+         "description": "构建信息和运行时状态。",
+         "version": "版本",
++        "buildTime": "构建时间",
+         "clipServer": "Clip 服务",
+         "apiServer": "API 服务",
+         "apiDisabled": "已禁用",
+diff --git a/src/vite-env.d.ts b/src/vite-env.d.ts
+index 70c0e5f..3b26346 100644
+--- a/src/vite-env.d.ts
++++ b/src/vite-env.d.ts
+@@ -2,3 +2,6 @@
+ 
+ /** App version injected by Vite's `define` from package.json. */
+ declare const __APP_VERSION__: string
++
++/** ISO timestamp captured at Vite config-load time (build moment). */
++declare const __APP_BUILD_TIME__: string
+diff --git a/vite.config.ts b/vite.config.ts
+index 7c0d58f..5ee7267 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -20,6 +20,10 @@ export default defineConfig(async () => ({
+ 
+   define: {
+     __APP_VERSION__: JSON.stringify(pkgJson.version),
++    // Capture the build moment so the About panel can show when
++    // this bundle was produced. Evaluated once at config-load time
++    // (i.e. when `vite build` / `vite dev` starts).
++    __APP_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+   },
+ 
+   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
+-- 
+2.54.0.windows.1
+

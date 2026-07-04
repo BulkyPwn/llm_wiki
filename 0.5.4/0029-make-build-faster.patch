@@ -1,7 +1,7 @@
 From 4b668f1836dbbfc2b99e0f0764187dffdca1e914 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Sat, 4 Jul 2026 15:24:22 +0800
-Subject: [PATCH 29/31] make build faster
+Subject: [PATCH 29/32] make build faster
 
 ---
  src-tauri/.cargo/config.toml | 3 +++

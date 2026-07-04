@@ -1,7 +1,7 @@
 From df660f9d871d70f4580615b86538902ed26b67e5 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Fri, 3 Jul 2026 10:48:56 +0800
-Subject: [PATCH 21/31] fix title bug
+Subject: [PATCH 21/32] fix title bug
 
 ---
  src-tauri/tauri.windows.conf.json | 1 +

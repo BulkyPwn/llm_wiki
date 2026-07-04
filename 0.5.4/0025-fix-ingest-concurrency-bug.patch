@@ -1,7 +1,7 @@
 From 563e7e3fb3b014963634b3811a906608ca090e00 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Fri, 3 Jul 2026 20:03:43 +0800
-Subject: [PATCH 25/31] fix ingest concurrency bug
+Subject: [PATCH 25/32] fix ingest concurrency bug
 
 ---
  src/lib/ingest-queue.ts | 2 +-
