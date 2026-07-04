@@ -174,25 +174,28 @@ fn tray_available<R: tauri::Runtime>(window: &tauri::Window<R>) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if is_headless() {
-                // Re-hide the window defensively — on some platforms the
-                // single-instance plugin fires its callback on the first
-                // launch, and we must ensure the window never becomes
-                // visible in headless mode.
+    let mut builder = tauri::Builder::default();
+
+    // In headless mode the single-instance plugin causes a visible
+    // flash on startup: its internal initialisation (or a platform-
+    // specific window-management side-effect) briefly shows the
+    // window before our hide() can run.  Skip the plugin entirely
+    // when LLM_WIKI_HEADLESS is set — the window stays created-but-
+    // hidden from the start (visible: false in tauri.conf.json) and
+    // background services (API, tray, etc.) run as usual.
+    if !is_headless() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(
+            |app, _args, _cwd| {
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.hide();
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
-                eprintln!("[headless] single-instance callback: headless mode, window stays hidden");
-                return;
-            }
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
+            },
+        ));
+    }
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
