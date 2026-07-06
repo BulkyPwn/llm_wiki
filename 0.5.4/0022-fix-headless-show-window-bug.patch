@@ -1,7 +1,7 @@
 From dac97e9c57d7e98a30643cdcddb661ecf8ad9a19 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Fri, 3 Jul 2026 17:12:15 +0800
-Subject: [PATCH 22/32] fix headless show window bug
+Subject: [PATCH 22/34] fix headless show window bug
 
 ---
  src-tauri/src/lib.rs | 22 +++++++++++++++++-----

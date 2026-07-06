@@ -1,7 +1,7 @@
 From 033a0ac59883bb0c0affc756b5347dadf1308f3b Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Thu, 4 Jun 2026 14:17:03 +0800
-Subject: [PATCH 05/32] add activate API
+Subject: [PATCH 05/34] add activate API
 
 ---
  src-tauri/src/api_server.rs | 45 ++++++++++++++++++++++-

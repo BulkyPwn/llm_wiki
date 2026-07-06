@@ -1,0 +1,115 @@
+From bc4cad5da9d98f476026fb8786b84d121aaabdb0 Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Mon, 6 Jul 2026 15:19:03 +0800
+Subject: [PATCH 34/34] fix ingest queue bug
+
+---
+ src/lib/ingest-queue.ts | 62 +++++++++++++++++++++++++++++++++--------
+ 1 file changed, 51 insertions(+), 11 deletions(-)
+
+diff --git a/src/lib/ingest-queue.ts b/src/lib/ingest-queue.ts
+index 961ccfb..567cd6e 100644
+--- a/src/lib/ingest-queue.ts
++++ b/src/lib/ingest-queue.ts
+@@ -734,6 +734,24 @@ async function onQueueDrained(projectId: string, projectPath: string): Promise<v
+ 
+ const SPECULATIVE_SCAN_DELAY_MS = 10_000
+ 
++/**
++ * Atomic check-and-claim for a pending task. Returns true only if the
++ * task with `id` is currently in the queue with status "pending"; on
++ * success, atomically removes it from the queue. Synchronous (no await)
++ * so the check and mutation can't be split by the event loop.
++ *
++ * Used by the speculative scan (claim-for-skip) to guarantee
++ * exactly-one-winner semantics against processTask: whoever mutates
++ * the task's state first wins, the loser sees the task is gone or no
++ * longer pending.
++ */
++function tryClaimTask(id: string): boolean {
++  const idx = queue.findIndex((t) => t.id === id && t.status === "pending")
++  if (idx === -1) return false
++  queue.splice(idx, 1)
++  return true
++}
++
+ function scheduleSpeculativeScan(projectId: string): void {
+   if (speculativeScanTimer) return
+   speculativeScanTimer = setTimeout(() => {
+@@ -797,15 +815,15 @@ async function runSpeculativeScan(projectId: string): Promise<void> {
+       const cachedFiles = await checkIngestCache(pp, sourceIdentity, content)
+ 
+       if (cachedFiles !== null) {
+-        // Re-check status before removing: during the awaits above,
+-        // another task may have finished and processNext could have
+-        // handed this task to processTask (status → "processing").
+-        // Removing it then would create a duplicate activity entry
+-        // (one from autoIngest, one from us). Let processTask own it.
+-        const current = queue.find((t) => t.id === task.id)
+-        if (!current || current.status !== "pending") continue
+-
+-        queue = queue.filter((t) => t.id !== task.id)
++        // Atomic check-and-remove: the status check and the queue
++        // mutation must run in the same synchronous tick with no await
++        // in between. Otherwise processTask could flip status to
++        // "processing" (or be removed by a parallel scan pass) in the
++        // gap, causing duplicate activity entries. `tryClaimTask`
++        // returns true only if the task is still pending and in the
++        // queue; it atomically removes it on success.
++        if (!tryClaimTask(task.id)) continue
++
+         removed++
+         // Surface the skip in the activity panel so the user sees the
+         // file was handled, mirroring the activity entry autoIngest
+@@ -929,6 +947,19 @@ async function processTask(
+   projectId: string,
+   next: IngestTask,
+ ): Promise<void> {
++  // ── Claim the task synchronously ────────────────────────────────────
++  // Set status to "processing" BEFORE any await. Otherwise a concurrent
++  // processNext call (triggered by another task completing or the
++  // speculative scan timer) would find this task still "pending" via
++  // `queue.find(... status === "pending")` and start a duplicate runner.
++  //
++  // Early-return paths below revert the status to "pending" when the
++  // task should NOT proceed (stale context, speculative scan claim,
++  // project deleted). The paths that move the task to "failed" or
++  // "done" do NOT revert because those are valid terminal states.
++  restoredPausedTaskIds.delete(next.id)
++  next.status = "processing"
++
+   // Look up the project's current filesystem path from the registry —
+   // it may have moved since the task was enqueued. If the project isn't
+   // in the registry (was deleted or never registered), mark as failed.
+@@ -937,6 +968,7 @@ async function processTask(
+ 
+   // Check we're still active after the registry await.
+   if (currentProjectId !== projectId) {
++    next.status = "pending"
+     activeCount = Math.max(0, activeCount - 1)
+     return
+   }
+@@ -950,10 +982,18 @@ async function processTask(
+     return
+   }
+ 
+-  restoredPausedTaskIds.delete(next.id)
+-  next.status = "processing"
++  // Guard: during the registry await above, the speculative scan may
++  // have claimed this task for skip-processing (tryClaimTask removes
++  // it from the queue). If so, revert the "processing" claim and bail.
++  if (!queue.some((t) => t.id === next.id)) {
++    next.status = "pending"
++    activeCount = Math.max(0, activeCount - 1)
++    return
++  }
++
+   await saveQueue(pp)
+   if (currentProjectId !== projectId) {
++    next.status = "pending"
+     activeCount = Math.max(0, activeCount - 1)
+     return
+   }
+-- 
+2.54.0.windows.1
+

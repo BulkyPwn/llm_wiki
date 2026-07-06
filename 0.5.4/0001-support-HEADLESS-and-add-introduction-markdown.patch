@@ -1,7 +1,7 @@
 From 32d6e96e2d4ca0d0abe2e77f5abc8adab1aa17bf Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Fri, 29 May 2026 00:03:21 +0800
-Subject: [PATCH 01/32] support HEADLESS and add introduction markdown
+Subject: [PATCH 01/34] support HEADLESS and add introduction markdown
 
 ---
  src-tauri/src/lib.rs                          |    8 +
