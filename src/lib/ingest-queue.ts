@@ -1,7 +1,8 @@
 import { readFile, writeFile } from "@/commands/fs"
 import { autoIngest } from "./ingest"
 import { useWikiStore } from "@/stores/wiki-store"
-import { normalizePath, isAbsolutePath } from "@/lib/path-utils"
+import { useActivityStore } from "@/stores/activity-store"
+import { getFileName, normalizePath, isAbsolutePath } from "@/lib/path-utils"
 import { getProjectPathById } from "@/lib/project-identity"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
 import { checkIngestCache } from "@/lib/ingest-cache"
@@ -796,12 +797,30 @@ async function runSpeculativeScan(projectId: string): Promise<void> {
       const cachedFiles = await checkIngestCache(pp, sourceIdentity, content)
 
       if (cachedFiles !== null) {
+        // Re-check status before removing: during the awaits above,
+        // another task may have finished and processNext could have
+        // handed this task to processTask (status → "processing").
+        // Removing it then would create a duplicate activity entry
+        // (one from autoIngest, one from us). Let processTask own it.
+        const current = queue.find((t) => t.id === task.id)
+        if (!current || current.status !== "pending") continue
+
         queue = queue.filter((t) => t.id !== task.id)
         removed++
+        // Surface the skip in the activity panel so the user sees the
+        // file was handled, mirroring the activity entry autoIngest
+        // would have created for a cache hit.
+        useActivityStore.getState().addItem({
+          type: "ingest",
+          title: getFileName(fullPath) || task.sourcePath,
+          status: "done",
+          detail: "Already ingested (unchanged)",
+          filesWritten: cachedFiles,
+        })
       }
     }
 
-    if (removed > 0) {
+    if (removed > 0 && currentProjectId === projectId) {
       await saveQueue(pp)
       console.log(
         `[Ingest Queue] Speculative scan: removed ${removed} already-ingested file(s) from queue`,
@@ -813,10 +832,11 @@ async function runSpeculativeScan(projectId: string): Promise<void> {
     speculativeScanRunning = false
   }
 
-  // Re-schedule if still saturated with pending tasks.
+  // After the scan, either re-schedule (still saturated) or kick
+  // processNext (a slot may have opened up via time-schedule change or
+  // task completions during the scan's awaits).
+  if (currentProjectId !== projectId || paused) return
   if (
-    currentProjectId === projectId &&
-    !paused &&
     activeCount >= getMaxConcurrent() &&
     queue.some(
       (t) =>
@@ -826,6 +846,8 @@ async function runSpeculativeScan(projectId: string): Promise<void> {
     )
   ) {
     scheduleSpeculativeScan(projectId)
+  } else {
+    processNext(projectId)
   }
 }
 
