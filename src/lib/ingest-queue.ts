@@ -825,6 +825,14 @@ async function runSpeculativeScan(projectId: string): Promise<void> {
         if (!tryClaimTask(task.id)) continue
 
         removed++
+        // Mirror processTask's success-path accounting so the queue
+        // summary's `total` (queue.length + completedSinceIdle) stays
+        // stable. Without this, cache-hit removals by the scan shrink
+        // `queue.length` without compensating via `completedSinceIdle`,
+        // causing the displayed total to drift downward whenever the
+        // scan (rather than processTask) handles a cache hit.
+        completedSinceIdle++
+        processedSinceDrain = true
         // Surface the skip in the activity panel so the user sees the
         // file was handled, mirroring the activity entry autoIngest
         // would have created for a cache hit.
