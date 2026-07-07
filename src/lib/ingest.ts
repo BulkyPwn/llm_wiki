@@ -573,9 +573,7 @@ export async function autoIngest(
   folderContext?: string,
   onFileWritten?: (relativePath: string) => void,
 ): Promise<string[]> {
-  return withProjectLock(normalizePath(projectPath), () =>
-    autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext, onFileWritten),
-  )
+  return autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext, onFileWritten)
 }
 
 function throwIfIngestAborted(signal: AbortSignal | undefined, activityId?: string): void {
@@ -1091,6 +1089,15 @@ async function autoIngestImpl(
     if (reviewStageHadError) reviewSuggestionOutput = ""
   }
 
+  // ── Phase boundary ────────────────────────────────────────────────
+  // Everything above (read + MinerU + images + Step1/2/review LLM)
+  // is lock-free and parallelizable across sources — it only READ the
+  // aggregate wiki files (index/overview) as prompt context. Everything
+  // below WRITES to those aggregate files and shared entity/concept
+  // pages, so it must run under the per-project lock to keep the
+  // read-modify-write sequences atomic. See project-mutex.ts.
+  const tCommitStart = Date.now()
+  const committedPaths = await withProjectLock(pp, async () => {
   // ── Step 3: Write files ───────────────────────────────────────
   throwIfIngestAborted(signal, activityId)
   activity.updateItem(activityId, { detail: "Writing files..." })
@@ -1326,6 +1333,11 @@ async function autoIngestImpl(
   })
 
   return writtenPaths
+  }) // end withProjectLock
+  console.log(
+    `[ingest:timing] commit ${sourceIdentity} — ${Date.now() - tCommitStart}ms`,
+  )
+  return committedPaths
 }
 
 /**
