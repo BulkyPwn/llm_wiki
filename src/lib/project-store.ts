@@ -134,6 +134,18 @@ export async function loadIngestConcurrency(): Promise<number | null> {
   return (await store.get<number>(INGEST_CONCURRENCY_KEY)) ?? null
 }
 
+const SPECULATIVE_SCAN_KEY = "speculativeScanEnabled"
+
+export async function saveSpeculativeScanEnabled(enabled: boolean): Promise<void> {
+  const store = await getStore()
+  await store.set(SPECULATIVE_SCAN_KEY, enabled)
+}
+
+export async function loadSpeculativeScanEnabled(): Promise<boolean | null> {
+  const store = await getStore()
+  return (await store.get<boolean>(SPECULATIVE_SCAN_KEY)) ?? null
+}
+
 const MINERU_KEY = "mineruConfig"
 
 function normalizeMineruConfig(config: MineruConfig): MineruConfig {

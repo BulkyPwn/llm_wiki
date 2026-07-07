@@ -10,7 +10,7 @@ import { useLintStore } from "@/stores/lint-store"
 import { useChatStore } from "@/stores/chat-store"
 import { BASE_FONT_SIZE_PX, useZoomStore } from "@/stores/zoom-store"
 import { openProject } from "@/commands/fs"
-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadIngestConcurrency, loadZoomLevel } from "@/lib/project-store"
+import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadIngestConcurrency, loadSpeculativeScanEnabled, loadZoomLevel } from "@/lib/project-store"
 import { loadReviewItems, loadLintItems, loadChatHistory, loadChatPreferences } from "@/lib/persist"
 import { setupAutoSave } from "@/lib/auto-save"
 import { startClipWatcher } from "@/lib/clip-watcher"
@@ -263,6 +263,10 @@ function App() {
         const savedConcurrency = await loadIngestConcurrency()
         if (savedConcurrency != null) {
           useWikiStore.getState().setIngestConcurrency(savedConcurrency)
+        }
+        const savedSpeculativeScan = await loadSpeculativeScanEnabled()
+        if (savedSpeculativeScan != null) {
+          useWikiStore.getState().setSpeculativeScanEnabled(savedSpeculativeScan)
         }
         console.log("[API] Config reload complete")
       } catch (err) {
@@ -528,6 +532,14 @@ function App() {
           }
         } catch (err) {
           console.warn("[startup] failed to load ingest concurrency:", err)
+        }
+        try {
+          const savedSpeculativeScan = await loadSpeculativeScanEnabled()
+          if (savedSpeculativeScan != null) {
+            useWikiStore.getState().setSpeculativeScanEnabled(savedSpeculativeScan)
+          }
+        } catch (err) {
+          console.warn("[startup] failed to load speculative scan setting:", err)
         }
         try {
           await invoke<string>("set_close_behavior", { value: savedGeneral.closeBehavior })

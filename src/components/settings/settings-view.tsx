@@ -97,6 +97,7 @@ function initialDraft(
   ingestConcurrency: number,
   ingestConcurrencyScheduleEnabled: boolean,
   ingestConcurrencySchedule: IngestTimeSlot[],
+  speculativeScanEnabled: boolean,
   outputLanguage: ReturnType<typeof useWikiStore.getState>["outputLanguage"],
   proxy: ReturnType<typeof useWikiStore.getState>["proxyConfig"],
   scheduledImport: ReturnType<typeof useWikiStore.getState>["scheduledImportConfig"],
@@ -156,6 +157,7 @@ function initialDraft(
     ingestConcurrency,
     ingestConcurrencyScheduleEnabled,
     ingestConcurrencySchedule,
+    speculativeScanEnabled,
     outputLanguage,
     maxHistoryMessages,
     proxyEnabled: proxy.enabled,
@@ -208,9 +210,11 @@ export function SettingsView() {
   const ingestConcurrency = useWikiStore((s) => s.ingestConcurrency)
   const ingestConcurrencyScheduleEnabled = useWikiStore((s) => s.ingestConcurrencyScheduleEnabled)
   const ingestConcurrencySchedule = useWikiStore((s) => s.ingestConcurrencySchedule)
+  const speculativeScanEnabled = useWikiStore((s) => s.speculativeScanEnabled)
   const setIngestConcurrency = useWikiStore((s) => s.setIngestConcurrency)
   const setIngestConcurrencyScheduleEnabled = useWikiStore((s) => s.setIngestConcurrencyScheduleEnabled)
   const setIngestConcurrencySchedule = useWikiStore((s) => s.setIngestConcurrencySchedule)
+  const setSpeculativeScanEnabled = useWikiStore((s) => s.setSpeculativeScanEnabled)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
   const setMaxHistoryMessages = useChatStore((s) => s.setMaxHistoryMessages)
   // Drives the red dot next to the "About" row in the settings
@@ -235,6 +239,7 @@ export function SettingsView() {
       ingestConcurrency,
       ingestConcurrencyScheduleEnabled,
       ingestConcurrencySchedule,
+      speculativeScanEnabled,
       outputLanguage,
       proxyConfig,
       scheduledImportConfig,
@@ -295,6 +300,7 @@ export function SettingsView() {
         ingestConcurrency,
         ingestConcurrencyScheduleEnabled,
         ingestConcurrencySchedule,
+        speculativeScanEnabled,
         outputLanguage,
         proxyConfig,
         scheduledImportConfig,
@@ -356,6 +362,7 @@ export function SettingsView() {
       saveGeneralConfig,
       loadGeneralConfig,
       saveIngestConcurrency,
+      saveSpeculativeScanEnabled,
       saveZoomLevel,
       loadZoomLevel,
     } = await import("@/lib/project-store")
@@ -452,6 +459,7 @@ export function SettingsView() {
     setIngestConcurrency(draft.ingestConcurrency)
     setIngestConcurrencyScheduleEnabled(draft.ingestConcurrencyScheduleEnabled)
     setIngestConcurrencySchedule(draft.ingestConcurrencySchedule)
+    setSpeculativeScanEnabled(draft.speculativeScanEnabled)
 
     try {
       await saveLlmConfig(newLlm)
@@ -539,6 +547,7 @@ export function SettingsView() {
       // Apply zoom level
       useZoomStore.getState().setLevel(draft.zoomLevel)
       await saveIngestConcurrency(draft.ingestConcurrency)
+      await saveSpeculativeScanEnabled(draft.speculativeScanEnabled)
       await saveZoomLevel(draft.zoomLevel)
 
       setSaved(true)

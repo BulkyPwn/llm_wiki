@@ -54,6 +54,9 @@ export interface SettingsDraft {
   /** Whether to use time-based concurrency schedule instead of flat value. */
   ingestConcurrencyScheduleEnabled: boolean
   ingestConcurrencySchedule: IngestTimeSlot[]
+  /** Whether the speculative ingest scan is enabled (pre-filters cache
+   *  hits from the backlog when concurrency is saturated). */
+  speculativeScanEnabled: boolean
 
   // Output preferences
   outputLanguage: string

@@ -320,6 +320,54 @@ export function OutputSection({ draft, setDraft }: Props) {
           </div>
         )}
       </div>
+
+      {/* ── Speculative ingest scan ── */}
+      <div
+        className={`rounded-md border-2 p-3 transition-colors ${
+          draft.speculativeScanEnabled ? "border-primary/40 bg-primary/5" : "border-border bg-background"
+        }`}
+      >
+        <div className="flex items-center justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">
+              {t("settings.sections.output.speculativeScanLabel", "Speculative ingest scan")}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {t(
+                "settings.sections.output.speculativeScanHint",
+                "When concurrency is saturated, a background scan pre-filters already-ingested files from the pending backlog so cache hits don't wait for an LLM slot. Leave OFF if you see total count fluctuations or duplicate skips.",
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDraft("speculativeScanEnabled", !draft.speculativeScanEnabled)}
+            role="switch"
+            aria-checked={draft.speculativeScanEnabled}
+            aria-label={t("settings.sections.output.speculativeScanLabel", "Speculative ingest scan")}
+            className="ml-3 flex shrink-0 items-center gap-2"
+          >
+            <span
+              className={`text-xs font-semibold ${
+                draft.speculativeScanEnabled ? "text-primary" : "text-muted-foreground"
+              }`}
+            >
+              {draft.speculativeScanEnabled ? t("settings.sections.output.stateOn", "ON") : t("settings.sections.output.stateOff", "OFF")}
+            </span>
+            <span
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                draft.speculativeScanEnabled ? "bg-primary" : "bg-muted"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  draft.speculativeScanEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                }`}
+              />
+            </span>
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

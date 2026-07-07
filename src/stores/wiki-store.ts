@@ -406,6 +406,10 @@ interface WikiState {
    *  slot's value based on the current hour. */
   ingestConcurrencyScheduleEnabled: boolean
   ingestConcurrencySchedule: IngestTimeSlot[]
+  /** Whether the speculative ingest scan is enabled. When ON, a
+   *  background scan pre-filters already-ingested files from the
+   *  pending backlog when concurrency is saturated. Defaults to OFF. */
+  speculativeScanEnabled: boolean
   outputLanguage: OutputLanguage
   proxyConfig: ProxyConfig
   scheduledImportConfig: ScheduledImportConfig
@@ -435,6 +439,7 @@ interface WikiState {
   setIngestConcurrency: (concurrency: number) => void
   setIngestConcurrencyScheduleEnabled: (enabled: boolean) => void
   setIngestConcurrencySchedule: (schedule: IngestTimeSlot[]) => void
+  setSpeculativeScanEnabled: (enabled: boolean) => void
   setOutputLanguage: (lang: OutputLanguage) => void
   setProxyConfig: (config: ProxyConfig) => void
   setScheduledImportConfig: (config: ScheduledImportConfig) => void
@@ -545,6 +550,7 @@ export const useWikiStore = create<WikiState>((set) => ({
   ingestConcurrency: 5,
   ingestConcurrencyScheduleEnabled: false,
   ingestConcurrencySchedule: [],
+  speculativeScanEnabled: false,
 
   outputLanguage: "auto",
 
@@ -593,6 +599,7 @@ export const useWikiStore = create<WikiState>((set) => ({
   setIngestConcurrency: (ingestConcurrency) => set({ ingestConcurrency }),
   setIngestConcurrencyScheduleEnabled: (enabled) => set({ ingestConcurrencyScheduleEnabled: enabled }),
   setIngestConcurrencySchedule: (schedule) => set({ ingestConcurrencySchedule: schedule }),
+  setSpeculativeScanEnabled: (speculativeScanEnabled) => set({ speculativeScanEnabled }),
   setOutputLanguage: (outputLanguage) => set({ outputLanguage }),
   setProxyConfig: (proxyConfig) => set({ proxyConfig }),
   setScheduledImportConfig: (scheduledImportConfig) => set({ scheduledImportConfig }),

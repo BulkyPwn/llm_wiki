@@ -589,6 +589,8 @@
         "historyCurrent": "Currently {{count}} messages (about {{turns}} turns)",
         "ingestConcurrency": "Ingest concurrency",
         "ingestConcurrencyHint": "Max parallel LLM requests during ingest (page merge + embedding). Higher values speed up ingest on high-throughput endpoints. 1 = sequential.",
+        "speculativeScanLabel": "Speculative ingest scan",
+        "speculativeScanHint": "When concurrency is saturated, a background scan pre-filters already-ingested files from the pending backlog so cache hits don't wait for an LLM slot. Leave OFF if you see total count fluctuations or duplicate skips.",
         "scheduleEnableLabel": "Time-based concurrency",
         "scheduleEnableHint": "Set different concurrency limits for different times of day. Useful when your LLM API has time-based rate limits or costs.",
         "scheduleHint": "Define time ranges (inclusive start, exclusive end). Cross-midnight ranges (e.g. 22:00-06:00) are supported. Hours not covered by any slot use the default concurrency above.",

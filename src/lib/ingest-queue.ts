@@ -735,6 +735,21 @@ async function onQueueDrained(projectId: string, projectPath: string): Promise<v
 const SPECULATIVE_SCAN_DELAY_MS = 10_000
 
 /**
+ * Whether the speculative ingest scan is enabled. Read live from the
+ * wiki store (configurable in Settings → Output → Speculative scan).
+ * When enabled, a background scan pre-filters already-ingested files
+ * from the pending backlog when concurrency is saturated, so cache
+ * hits don't have to wait for an LLM slot just to be skipped.
+ *
+ * Defaults to OFF. The accounting for scan-removed tasks mirrors
+ * processTask's success path (completedSinceIdle++), so the queue
+ * summary total stays stable either way.
+ */
+function isSpeculativeScanEnabled(): boolean {
+  return useWikiStore.getState().speculativeScanEnabled === true
+}
+
+/**
  * Atomic check-and-claim for a pending task. Returns true only if the
  * task with `id` is currently in the queue with status "pending"; on
  * success, atomically removes it from the queue. Synchronous (no await)
@@ -753,6 +768,7 @@ function tryClaimTask(id: string): boolean {
 }
 
 function scheduleSpeculativeScan(projectId: string): void {
+  if (!isSpeculativeScanEnabled()) return
   if (speculativeScanTimer) return
   speculativeScanTimer = setTimeout(() => {
     runSpeculativeScan(projectId).catch((err) =>
@@ -830,7 +846,9 @@ async function runSpeculativeScan(projectId: string): Promise<void> {
         // stable. Without this, cache-hit removals by the scan shrink
         // `queue.length` without compensating via `completedSinceIdle`,
         // causing the displayed total to drift downward whenever the
-        // scan (rather than processTask) handles a cache hit.
+        // scan (rather than processTask) handles a cache hit. This is
+        // the single fix needed to make the speculative scan safe to
+        // enable — the race itself is already handled by tryClaimTask.
         completedSinceIdle++
         processedSinceDrain = true
         // Surface the skip in the activity panel so the user sees the
