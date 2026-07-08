@@ -1,7 +1,7 @@
 From f224afbe4bd0931f9cf164a4faf4950f5e181fb3 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Sat, 4 Jul 2026 18:46:47 +0800
-Subject: [PATCH 31/34] set windows visible to false
+Subject: [PATCH 31/38] set windows visible to false
 
 ---
  src-tauri/tauri.windows.conf.json | 3 ++-

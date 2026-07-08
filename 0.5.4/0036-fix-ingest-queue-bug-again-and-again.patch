@@ -1,0 +1,337 @@
+From 335ca4d8f0623cc8261df2fcf53fab159a63b1ab Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Tue, 7 Jul 2026 19:28:49 +0800
+Subject: [PATCH 36/38] fix ingest queue bug again and again
+
+---
+ src/App.tsx                                   | 14 +++++-
+ .../settings/sections/output-section.tsx      | 48 +++++++++++++++++++
+ src/components/settings/settings-types.ts     |  3 ++
+ src/components/settings/settings-view.tsx     |  9 ++++
+ src/i18n/en.json                              |  2 +
+ src/i18n/zh.json                              |  2 +
+ src/lib/ingest-queue.ts                       | 20 +++++++-
+ src/lib/project-store.ts                      | 12 +++++
+ src/stores/wiki-store.ts                      |  7 +++
+ 9 files changed, 115 insertions(+), 2 deletions(-)
+
+diff --git a/src/App.tsx b/src/App.tsx
+index dca4648..e549493 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -10,7 +10,7 @@ import { useLintStore } from "@/stores/lint-store"
+ import { useChatStore } from "@/stores/chat-store"
+ import { BASE_FONT_SIZE_PX, useZoomStore } from "@/stores/zoom-store"
+ import { openProject } from "@/commands/fs"
+-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadIngestConcurrency, loadZoomLevel } from "@/lib/project-store"
++import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadActivePresetId, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadIngestConcurrency, loadSpeculativeScanEnabled, loadZoomLevel } from "@/lib/project-store"
+ import { loadReviewItems, loadLintItems, loadChatHistory, loadChatPreferences } from "@/lib/persist"
+ import { setupAutoSave } from "@/lib/auto-save"
+ import { startClipWatcher } from "@/lib/clip-watcher"
+@@ -264,6 +264,10 @@ function App() {
+         if (savedConcurrency != null) {
+           useWikiStore.getState().setIngestConcurrency(savedConcurrency)
+         }
++        const savedSpeculativeScan = await loadSpeculativeScanEnabled()
++        if (savedSpeculativeScan != null) {
++          useWikiStore.getState().setSpeculativeScanEnabled(savedSpeculativeScan)
++        }
+         console.log("[API] Config reload complete")
+       } catch (err) {
+         console.error("[API] Config reload failed:", err)
+@@ -529,6 +533,14 @@ function App() {
+         } catch (err) {
+           console.warn("[startup] failed to load ingest concurrency:", err)
+         }
++        try {
++          const savedSpeculativeScan = await loadSpeculativeScanEnabled()
++          if (savedSpeculativeScan != null) {
++            useWikiStore.getState().setSpeculativeScanEnabled(savedSpeculativeScan)
++          }
++        } catch (err) {
++          console.warn("[startup] failed to load speculative scan setting:", err)
++        }
+         try {
+           await invoke<string>("set_close_behavior", { value: savedGeneral.closeBehavior })
+         } catch (err) {
+diff --git a/src/components/settings/sections/output-section.tsx b/src/components/settings/sections/output-section.tsx
+index c2ca62e..00cc6a5 100644
+--- a/src/components/settings/sections/output-section.tsx
++++ b/src/components/settings/sections/output-section.tsx
+@@ -320,6 +320,54 @@ export function OutputSection({ draft, setDraft }: Props) {
+           </div>
+         )}
+       </div>
++
++      {/* ── Speculative ingest scan ── */}
++      <div
++        className={`rounded-md border-2 p-3 transition-colors ${
++          draft.speculativeScanEnabled ? "border-primary/40 bg-primary/5" : "border-border bg-background"
++        }`}
++      >
++        <div className="flex items-center justify-between">
++          <div className="min-w-0 flex-1">
++            <div className="text-sm font-medium">
++              {t("settings.sections.output.speculativeScanLabel", "Speculative ingest scan")}
++            </div>
++            <div className="text-xs text-muted-foreground">
++              {t(
++                "settings.sections.output.speculativeScanHint",
++                "When concurrency is saturated, a background scan pre-filters already-ingested files from the pending backlog so cache hits don't wait for an LLM slot. Leave OFF if you see total count fluctuations or duplicate skips.",
++              )}
++            </div>
++          </div>
++          <button
++            type="button"
++            onClick={() => setDraft("speculativeScanEnabled", !draft.speculativeScanEnabled)}
++            role="switch"
++            aria-checked={draft.speculativeScanEnabled}
++            aria-label={t("settings.sections.output.speculativeScanLabel", "Speculative ingest scan")}
++            className="ml-3 flex shrink-0 items-center gap-2"
++          >
++            <span
++              className={`text-xs font-semibold ${
++                draft.speculativeScanEnabled ? "text-primary" : "text-muted-foreground"
++              }`}
++            >
++              {draft.speculativeScanEnabled ? t("settings.sections.output.stateOn", "ON") : t("settings.sections.output.stateOff", "OFF")}
++            </span>
++            <span
++              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
++                draft.speculativeScanEnabled ? "bg-primary" : "bg-muted"
++              }`}
++            >
++              <span
++                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
++                  draft.speculativeScanEnabled ? "translate-x-4.5" : "translate-x-0.5"
++                }`}
++              />
++            </span>
++          </button>
++        </div>
++      </div>
+     </div>
+   )
+ }
+diff --git a/src/components/settings/settings-types.ts b/src/components/settings/settings-types.ts
+index b3f1756..3e9e7dd 100644
+--- a/src/components/settings/settings-types.ts
++++ b/src/components/settings/settings-types.ts
+@@ -54,6 +54,9 @@ export interface SettingsDraft {
+   /** Whether to use time-based concurrency schedule instead of flat value. */
+   ingestConcurrencyScheduleEnabled: boolean
+   ingestConcurrencySchedule: IngestTimeSlot[]
++  /** Whether the speculative ingest scan is enabled (pre-filters cache
++   *  hits from the backlog when concurrency is saturated). */
++  speculativeScanEnabled: boolean
+ 
+   // Output preferences
+   outputLanguage: string
+diff --git a/src/components/settings/settings-view.tsx b/src/components/settings/settings-view.tsx
+index 85ab147..8355bb7 100644
+--- a/src/components/settings/settings-view.tsx
++++ b/src/components/settings/settings-view.tsx
+@@ -97,6 +97,7 @@ function initialDraft(
+   ingestConcurrency: number,
+   ingestConcurrencyScheduleEnabled: boolean,
+   ingestConcurrencySchedule: IngestTimeSlot[],
++  speculativeScanEnabled: boolean,
+   outputLanguage: ReturnType<typeof useWikiStore.getState>["outputLanguage"],
+   proxy: ReturnType<typeof useWikiStore.getState>["proxyConfig"],
+   scheduledImport: ReturnType<typeof useWikiStore.getState>["scheduledImportConfig"],
+@@ -156,6 +157,7 @@ function initialDraft(
+     ingestConcurrency,
+     ingestConcurrencyScheduleEnabled,
+     ingestConcurrencySchedule,
++    speculativeScanEnabled,
+     outputLanguage,
+     maxHistoryMessages,
+     proxyEnabled: proxy.enabled,
+@@ -208,9 +210,11 @@ export function SettingsView() {
+   const ingestConcurrency = useWikiStore((s) => s.ingestConcurrency)
+   const ingestConcurrencyScheduleEnabled = useWikiStore((s) => s.ingestConcurrencyScheduleEnabled)
+   const ingestConcurrencySchedule = useWikiStore((s) => s.ingestConcurrencySchedule)
++  const speculativeScanEnabled = useWikiStore((s) => s.speculativeScanEnabled)
+   const setIngestConcurrency = useWikiStore((s) => s.setIngestConcurrency)
+   const setIngestConcurrencyScheduleEnabled = useWikiStore((s) => s.setIngestConcurrencyScheduleEnabled)
+   const setIngestConcurrencySchedule = useWikiStore((s) => s.setIngestConcurrencySchedule)
++  const setSpeculativeScanEnabled = useWikiStore((s) => s.setSpeculativeScanEnabled)
+   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
+   const setMaxHistoryMessages = useChatStore((s) => s.setMaxHistoryMessages)
+   // Drives the red dot next to the "About" row in the settings
+@@ -235,6 +239,7 @@ export function SettingsView() {
+       ingestConcurrency,
+       ingestConcurrencyScheduleEnabled,
+       ingestConcurrencySchedule,
++      speculativeScanEnabled,
+       outputLanguage,
+       proxyConfig,
+       scheduledImportConfig,
+@@ -295,6 +300,7 @@ export function SettingsView() {
+         ingestConcurrency,
+         ingestConcurrencyScheduleEnabled,
+         ingestConcurrencySchedule,
++        speculativeScanEnabled,
+         outputLanguage,
+         proxyConfig,
+         scheduledImportConfig,
+@@ -356,6 +362,7 @@ export function SettingsView() {
+       saveGeneralConfig,
+       loadGeneralConfig,
+       saveIngestConcurrency,
++      saveSpeculativeScanEnabled,
+       saveZoomLevel,
+       loadZoomLevel,
+     } = await import("@/lib/project-store")
+@@ -452,6 +459,7 @@ export function SettingsView() {
+     setIngestConcurrency(draft.ingestConcurrency)
+     setIngestConcurrencyScheduleEnabled(draft.ingestConcurrencyScheduleEnabled)
+     setIngestConcurrencySchedule(draft.ingestConcurrencySchedule)
++    setSpeculativeScanEnabled(draft.speculativeScanEnabled)
+ 
+     try {
+       await saveLlmConfig(newLlm)
+@@ -539,6 +547,7 @@ export function SettingsView() {
+       // Apply zoom level
+       useZoomStore.getState().setLevel(draft.zoomLevel)
+       await saveIngestConcurrency(draft.ingestConcurrency)
++      await saveSpeculativeScanEnabled(draft.speculativeScanEnabled)
+       await saveZoomLevel(draft.zoomLevel)
+ 
+       setSaved(true)
+diff --git a/src/i18n/en.json b/src/i18n/en.json
+index 3271016..cfc7a5b 100644
+--- a/src/i18n/en.json
++++ b/src/i18n/en.json
+@@ -589,6 +589,8 @@
+         "historyCurrent": "Currently {{count}} messages (about {{turns}} turns)",
+         "ingestConcurrency": "Ingest concurrency",
+         "ingestConcurrencyHint": "Max parallel LLM requests during ingest (page merge + embedding). Higher values speed up ingest on high-throughput endpoints. 1 = sequential.",
++        "speculativeScanLabel": "Speculative ingest scan",
++        "speculativeScanHint": "When concurrency is saturated, a background scan pre-filters already-ingested files from the pending backlog so cache hits don't wait for an LLM slot. Leave OFF if you see total count fluctuations or duplicate skips.",
+         "scheduleEnableLabel": "Time-based concurrency",
+         "scheduleEnableHint": "Set different concurrency limits for different times of day. Useful when your LLM API has time-based rate limits or costs.",
+         "scheduleHint": "Define time ranges (inclusive start, exclusive end). Cross-midnight ranges (e.g. 22:00-06:00) are supported. Hours not covered by any slot use the default concurrency above.",
+diff --git a/src/i18n/zh.json b/src/i18n/zh.json
+index 54c744d..0698607 100644
+--- a/src/i18n/zh.json
++++ b/src/i18n/zh.json
+@@ -589,6 +589,8 @@
+         "historyCurrent": "当前 {{count}} 条消息（约 {{turns}} 轮对话）",
+         "ingestConcurrency": "Ingest 并发数",
+         "ingestConcurrencyHint": "Ingest 期间最大并行 LLM 请求数（页面合并 + 向量化）。高并发可加快高吞吐量端点的 ingest 速度。1 = 顺序执行。",
++        "speculativeScanLabel": "投机摄入扫描",
++        "speculativeScanHint": "并发饱和时，后台扫描会预先从待处理队列中过滤掉已录入的文件，使缓存命中不必等待 LLM 槽位。若仍看到总数波动或重复跳过，请保持关闭。",
+         "scheduleEnableLabel": "按时段配置并发",
+         "scheduleEnableHint": "为一天中不同时段设置不同的并发限制。适用于 LLM API 按时段计费或限流的情况。",
+         "scheduleHint": "定义时间段（起始小时包含，结束小时不包含）。支持跨午夜时间范围（如 22:00-06:00）。未被任何时段覆盖的小时使用上方的默认并发数。",
+diff --git a/src/lib/ingest-queue.ts b/src/lib/ingest-queue.ts
+index e7dd7b2..8267945 100644
+--- a/src/lib/ingest-queue.ts
++++ b/src/lib/ingest-queue.ts
+@@ -734,6 +734,21 @@ async function onQueueDrained(projectId: string, projectPath: string): Promise<v
+ 
+ const SPECULATIVE_SCAN_DELAY_MS = 10_000
+ 
++/**
++ * Whether the speculative ingest scan is enabled. Read live from the
++ * wiki store (configurable in Settings → Output → Speculative scan).
++ * When enabled, a background scan pre-filters already-ingested files
++ * from the pending backlog when concurrency is saturated, so cache
++ * hits don't have to wait for an LLM slot just to be skipped.
++ *
++ * Defaults to OFF. The accounting for scan-removed tasks mirrors
++ * processTask's success path (completedSinceIdle++), so the queue
++ * summary total stays stable either way.
++ */
++function isSpeculativeScanEnabled(): boolean {
++  return useWikiStore.getState().speculativeScanEnabled === true
++}
++
+ /**
+  * Atomic check-and-claim for a pending task. Returns true only if the
+  * task with `id` is currently in the queue with status "pending"; on
+@@ -753,6 +768,7 @@ function tryClaimTask(id: string): boolean {
+ }
+ 
+ function scheduleSpeculativeScan(projectId: string): void {
++  if (!isSpeculativeScanEnabled()) return
+   if (speculativeScanTimer) return
+   speculativeScanTimer = setTimeout(() => {
+     runSpeculativeScan(projectId).catch((err) =>
+@@ -830,7 +846,9 @@ async function runSpeculativeScan(projectId: string): Promise<void> {
+         // stable. Without this, cache-hit removals by the scan shrink
+         // `queue.length` without compensating via `completedSinceIdle`,
+         // causing the displayed total to drift downward whenever the
+-        // scan (rather than processTask) handles a cache hit.
++        // scan (rather than processTask) handles a cache hit. This is
++        // the single fix needed to make the speculative scan safe to
++        // enable — the race itself is already handled by tryClaimTask.
+         completedSinceIdle++
+         processedSinceDrain = true
+         // Surface the skip in the activity panel so the user sees the
+diff --git a/src/lib/project-store.ts b/src/lib/project-store.ts
+index 0c68ea2..a85caa6 100644
+--- a/src/lib/project-store.ts
++++ b/src/lib/project-store.ts
+@@ -134,6 +134,18 @@ export async function loadIngestConcurrency(): Promise<number | null> {
+   return (await store.get<number>(INGEST_CONCURRENCY_KEY)) ?? null
+ }
+ 
++const SPECULATIVE_SCAN_KEY = "speculativeScanEnabled"
++
++export async function saveSpeculativeScanEnabled(enabled: boolean): Promise<void> {
++  const store = await getStore()
++  await store.set(SPECULATIVE_SCAN_KEY, enabled)
++}
++
++export async function loadSpeculativeScanEnabled(): Promise<boolean | null> {
++  const store = await getStore()
++  return (await store.get<boolean>(SPECULATIVE_SCAN_KEY)) ?? null
++}
++
+ const MINERU_KEY = "mineruConfig"
+ 
+ function normalizeMineruConfig(config: MineruConfig): MineruConfig {
+diff --git a/src/stores/wiki-store.ts b/src/stores/wiki-store.ts
+index dbce4eb..69bfb89 100644
+--- a/src/stores/wiki-store.ts
++++ b/src/stores/wiki-store.ts
+@@ -406,6 +406,10 @@ interface WikiState {
+    *  slot's value based on the current hour. */
+   ingestConcurrencyScheduleEnabled: boolean
+   ingestConcurrencySchedule: IngestTimeSlot[]
++  /** Whether the speculative ingest scan is enabled. When ON, a
++   *  background scan pre-filters already-ingested files from the
++   *  pending backlog when concurrency is saturated. Defaults to OFF. */
++  speculativeScanEnabled: boolean
+   outputLanguage: OutputLanguage
+   proxyConfig: ProxyConfig
+   scheduledImportConfig: ScheduledImportConfig
+@@ -435,6 +439,7 @@ interface WikiState {
+   setIngestConcurrency: (concurrency: number) => void
+   setIngestConcurrencyScheduleEnabled: (enabled: boolean) => void
+   setIngestConcurrencySchedule: (schedule: IngestTimeSlot[]) => void
++  setSpeculativeScanEnabled: (enabled: boolean) => void
+   setOutputLanguage: (lang: OutputLanguage) => void
+   setProxyConfig: (config: ProxyConfig) => void
+   setScheduledImportConfig: (config: ScheduledImportConfig) => void
+@@ -545,6 +550,7 @@ export const useWikiStore = create<WikiState>((set) => ({
+   ingestConcurrency: 5,
+   ingestConcurrencyScheduleEnabled: false,
+   ingestConcurrencySchedule: [],
++  speculativeScanEnabled: false,
+ 
+   outputLanguage: "auto",
+ 
+@@ -593,6 +599,7 @@ export const useWikiStore = create<WikiState>((set) => ({
+   setIngestConcurrency: (ingestConcurrency) => set({ ingestConcurrency }),
+   setIngestConcurrencyScheduleEnabled: (enabled) => set({ ingestConcurrencyScheduleEnabled: enabled }),
+   setIngestConcurrencySchedule: (schedule) => set({ ingestConcurrencySchedule: schedule }),
++  setSpeculativeScanEnabled: (speculativeScanEnabled) => set({ speculativeScanEnabled }),
+   setOutputLanguage: (outputLanguage) => set({ outputLanguage }),
+   setProxyConfig: (proxyConfig) => set({ proxyConfig }),
+   setScheduledImportConfig: (scheduledImportConfig) => set({ scheduledImportConfig }),
+-- 
+2.54.0.windows.1
+

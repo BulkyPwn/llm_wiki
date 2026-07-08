@@ -1,7 +1,7 @@
 From 3dcef09efd5549b0ae1ac2cd223fb03e7a2476fb Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Wed, 10 Jun 2026 16:53:37 +0800
-Subject: [PATCH 08/34] add CLI version and help
+Subject: [PATCH 08/38] add CLI version and help
 
 ---
  src-tauri/src/main.rs | 19 +++++++++++++++++++

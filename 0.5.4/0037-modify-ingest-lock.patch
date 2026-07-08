@@ -1,0 +1,55 @@
+From 27d0206f8ff5ddf455e2dde76c05d0c80f23e59c Mon Sep 17 00:00:00 2001
+From: BulkyPwn <BulkyPwn@gmail.com>
+Date: Tue, 7 Jul 2026 20:37:31 +0800
+Subject: [PATCH 37/38] modify ingest lock
+
+---
+ src/lib/ingest.ts | 18 +++++++++++++++---
+ 1 file changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/src/lib/ingest.ts b/src/lib/ingest.ts
+index c7ccb41..c47fe4e 100644
+--- a/src/lib/ingest.ts
++++ b/src/lib/ingest.ts
+@@ -573,9 +573,7 @@ export async function autoIngest(
+   folderContext?: string,
+   onFileWritten?: (relativePath: string) => void,
+ ): Promise<string[]> {
+-  return withProjectLock(normalizePath(projectPath), () =>
+-    autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext, onFileWritten),
+-  )
++  return autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext, onFileWritten)
+ }
+ 
+ function throwIfIngestAborted(signal: AbortSignal | undefined, activityId?: string): void {
+@@ -1091,6 +1089,15 @@ async function autoIngestImpl(
+     if (reviewStageHadError) reviewSuggestionOutput = ""
+   }
+ 
++  // ── Phase boundary ────────────────────────────────────────────────
++  // Everything above (read + MinerU + images + Step1/2/review LLM)
++  // is lock-free and parallelizable across sources — it only READ the
++  // aggregate wiki files (index/overview) as prompt context. Everything
++  // below WRITES to those aggregate files and shared entity/concept
++  // pages, so it must run under the per-project lock to keep the
++  // read-modify-write sequences atomic. See project-mutex.ts.
++  const tCommitStart = Date.now()
++  const committedPaths = await withProjectLock(pp, async () => {
+   // ── Step 3: Write files ───────────────────────────────────────
+   throwIfIngestAborted(signal, activityId)
+   activity.updateItem(activityId, { detail: "Writing files..." })
+@@ -1326,6 +1333,11 @@ async function autoIngestImpl(
+   })
+ 
+   return writtenPaths
++  }) // end withProjectLock
++  console.log(
++    `[ingest:timing] commit ${sourceIdentity} — ${Date.now() - tCommitStart}ms`,
++  )
++  return committedPaths
+ }
+ 
+ /**
+-- 
+2.54.0.windows.1
+

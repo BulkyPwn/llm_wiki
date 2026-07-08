@@ -1,7 +1,7 @@
 From a5afdf463e3399bc6facf33cf0e198674f9e783a Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Tue, 9 Jun 2026 19:53:59 +0800
-Subject: [PATCH 07/34] add reload API
+Subject: [PATCH 07/38] add reload API
 
 ---
  src-tauri/src/api_server.rs | 18 ++++++++++
