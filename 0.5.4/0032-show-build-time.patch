@@ -1,7 +1,7 @@
 From d518cf995c0891435161ee5b593127dda3be7307 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Sat, 4 Jul 2026 18:59:08 +0800
-Subject: [PATCH 32/38] show build time
+Subject: [PATCH 32/39] show build time
 
 ---
  .../settings/sections/about-section.tsx         | 17 +++++++++++++++++

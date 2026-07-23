@@ -1,7 +1,7 @@
 From d8e8e966299251f02ac7369c2fee7c2a1975c110 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Sat, 4 Jul 2026 17:52:26 +0800
-Subject: [PATCH 30/38] fix headless mode fleeting glimpse bug again and again
+Subject: [PATCH 30/39] fix headless mode fleeting glimpse bug again and again
 
 ---
  src-tauri/src/lib.rs | 17 +++++++++++++++++

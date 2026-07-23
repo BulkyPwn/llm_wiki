@@ -1,7 +1,7 @@
 From 9f53a3ad5017e82be9160bddb1afb99580f05e14 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Wed, 8 Jul 2026 14:20:09 +0800
-Subject: [PATCH 38/38] add LLM Wiki API doc
+Subject: [PATCH 38/39] add LLM Wiki API doc
 
 ---
  LLM_Wiki_API.md | 385 ++++++++++++++++++++++++++++++++++++++++++++++++

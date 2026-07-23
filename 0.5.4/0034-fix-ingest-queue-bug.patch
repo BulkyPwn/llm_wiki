@@ -1,7 +1,7 @@
 From bc4cad5da9d98f476026fb8786b84d121aaabdb0 Mon Sep 17 00:00:00 2001
 From: BulkyPwn <BulkyPwn@gmail.com>
 Date: Mon, 6 Jul 2026 15:19:03 +0800
-Subject: [PATCH 34/38] fix ingest queue bug
+Subject: [PATCH 34/39] fix ingest queue bug
 
 ---
  src/lib/ingest-queue.ts | 62 +++++++++++++++++++++++++++++++++--------
