@@ -19,6 +19,10 @@ use uuid::Uuid;
 struct CloseBehaviorState(Mutex<String>);
 struct TrayAvailabilityState(Mutex<bool>);
 
+fn is_headless() -> bool {
+    std::env::var("LLM_WIKI_HEADLESS").is_ok_and(|v| !v.is_empty())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AgentProjectEntry {
@@ -509,6 +513,38 @@ fn set_proxy_env(config: proxy::ProxyConfig) -> String {
     summary
 }
 
+/// Show the main window when running in headless mode (LLM_WIKI_HEADLESS
+/// is set). Also usable from the API server route POST /window/show.
+#[tauri::command]
+fn show_window(app: tauri::AppHandle) -> String {
+    run_guarded("show_window", || {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+            Ok("ok".to_string())
+        } else {
+            eprintln!("[headless] No main window found");
+            Err("No main window found".to_string())
+        }
+    })
+    .unwrap_or_else(|e| format!("error: {e}"))
+}
+
+/// Hide the main window (minimize to tray in headless mode).
+#[tauri::command]
+fn hide_window(app: tauri::AppHandle) -> String {
+    run_guarded("hide_window", || {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.hide();
+            Ok("ok".to_string())
+        } else {
+            eprintln!("[headless] No main window found");
+            Err("No main window found".to_string())
+        }
+    })
+    .unwrap_or_else(|e| format!("error: {e}"))
+}
+
 #[tauri::command]
 fn set_close_behavior(
     value: String,
@@ -548,7 +584,26 @@ fn tray_available<R: tauri::Runtime>(window: &tauri::Window<R>) -> bool {
 pub fn run() {
     apply_linux_webkit_compat_env();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // In headless mode the single-instance plugin causes a visible
+    // flash on startup: its internal initialisation briefly shows the
+    // window before our hide() can run. Skip the plugin entirely when
+    // LLM_WIKI_HEADLESS is set — the window stays created-but-hidden
+    // from the start and background services run as usual.
+    if !is_headless() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(
+            |app, _args, _cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            },
+        ));
+    }
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -562,6 +617,18 @@ pub fn run() {
         // from Rust, never the webview.
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
+            // Headless guard: Windows WebView2 initialisation may briefly
+            // flash the window even when visible:false is configured.
+            // Call hide() at the very start of setup so the window is
+            // re-hidden before any other plugin or service has a chance
+            // to trigger a repaint.
+            if is_headless() {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+                eprintln!("[headless] Window hidden at setup start");
+            }
+
             // Let the PDF extractor find the bundled pdfium dynamic
             // library via Tauri's platform-correct resource path.
             if let Ok(dir) = app.path().resource_dir() {
@@ -615,6 +682,21 @@ pub fn run() {
                     eprintln!("[tray] failed to update tray availability state: {err}");
                 }
             }
+
+            // Show the window on normal startup. In headless mode, re-hide
+            // after all plugins and services have finished initialising.
+            if !is_headless() {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    eprintln!("[headless] Window shown (normal mode)");
+                }
+            } else {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+                eprintln!("[headless] Running headless (LLM_WIKI_HEADLESS is set), window stays hidden");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -691,6 +773,8 @@ pub fn run() {
             commands::file_sync::ignore_file_change_task,
             set_proxy_env,
             set_close_behavior,
+            show_window,
+            hide_window,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -749,10 +833,14 @@ pub fn run() {
             } = event
             {
                 if !has_visible_windows {
-                    use tauri::Manager;
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                    if is_headless() {
+                        eprintln!("[headless] Reopen event ignored (headless mode)");
+                    } else {
+                        use tauri::Manager;
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
                     }
                 }
             }

@@ -36,6 +36,7 @@ export function SourcesView() {
   const llmConfig = useWikiStore((s) => s.llmConfig)
   const sourceWatchConfig = useWikiStore((s) => s.sourceWatchConfig)
   const dataVersion = useWikiStore((s) => s.dataVersion)
+  const fileTree = useWikiStore((s) => s.fileTree)
   const [sources, setSources] = useState<FileNode[]>([])
   const [importing, setImporting] = useState(false)
   const [ingestingPath, setIngestingPath] = useState<string | null>(null)
@@ -83,7 +84,7 @@ export function SourcesView() {
 
   useEffect(() => {
     loadSources()
-  }, [loadSources, dataVersion])
+  }, [loadSources, dataVersion, fileTree])
 
   async function handleRefreshSources() {
     if (!project || refreshing) return

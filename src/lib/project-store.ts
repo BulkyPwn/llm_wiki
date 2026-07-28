@@ -50,6 +50,16 @@ const CUSTOM_LLM_PRESETS_KEY = "customLlmPresets"
 let projectLlmOverrideWrite = Promise.resolve()
 let customLlmPresetWrite = Promise.resolve()
 
+/**
+ * Force the in-memory Tauri store to discard its cached content and
+ * re-read the on-disk app-state.json. Call this before reading config
+ * keys that may have been updated externally.
+ */
+export async function reloadStore(): Promise<void> {
+  const store = await getStore()
+  await store.reload()
+}
+
 export async function saveLlmConfig(config: LlmConfig): Promise<void> {
   const store = await getStore()
   await store.set(LLM_CONFIG_KEY, config)
@@ -191,6 +201,30 @@ export async function loadMultimodalConfig(): Promise<MultimodalConfig | null> {
   return (await store.get<MultimodalConfig>(MULTIMODAL_KEY)) ?? null
 }
 
+const INGEST_CONCURRENCY_KEY = "ingestConcurrency"
+
+export async function saveIngestConcurrency(concurrency: number): Promise<void> {
+  const store = await getStore()
+  await store.set(INGEST_CONCURRENCY_KEY, concurrency)
+}
+
+export async function loadIngestConcurrency(): Promise<number | null> {
+  const store = await getStore()
+  return (await store.get<number>(INGEST_CONCURRENCY_KEY)) ?? null
+}
+
+const SPECULATIVE_SCAN_KEY = "speculativeScanEnabled"
+
+export async function saveSpeculativeScanEnabled(enabled: boolean): Promise<void> {
+  const store = await getStore()
+  await store.set(SPECULATIVE_SCAN_KEY, enabled)
+}
+
+export async function loadSpeculativeScanEnabled(): Promise<boolean | null> {
+  const store = await getStore()
+  return (await store.get<boolean>(SPECULATIVE_SCAN_KEY)) ?? null
+}
+
 const MINERU_KEY = "mineruConfig"
 const DEFAULT_LOCAL_MINERU_ENDPOINT = "http://127.0.0.1:8000"
 const LOCAL_MINERU_BACKENDS = new Set([
@@ -228,6 +262,10 @@ function normalizeMineruConfig(config: MineruConfig): MineruConfig {
       typeof config.localServerUrl === "string" ? config.localServerUrl.trim() : "",
     token: typeof config.token === "string" ? config.token : "",
     modelVersion: config.modelVersion === "pipeline" ? "pipeline" : "vlm",
+    apiBase:
+      typeof config.apiBase === "string" && config.apiBase.trim()
+        ? config.apiBase
+        : "https://mineru.net/api/v4",
   }
 }
 

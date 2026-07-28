@@ -20,6 +20,10 @@ export default defineConfig(async () => ({
 
   define: {
     __APP_VERSION__: JSON.stringify(pkgJson.version),
+    // Capture the build moment so the About panel can show when
+    // this bundle was produced. Evaluated once at config-load time
+    // (i.e. when `vite build` / `vite dev` starts).
+    __APP_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

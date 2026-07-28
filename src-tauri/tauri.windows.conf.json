@@ -3,8 +3,10 @@
     "windows": [
       {
         "label": "main",
+        "title": "LLM Wiki",
         "hiddenTitle": false,
-        "titleBarStyle": "Visible"
+        "titleBarStyle": "Visible",
+        "visible": false
       }
     ]
   },

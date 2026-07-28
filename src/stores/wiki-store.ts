@@ -43,6 +43,11 @@ interface LlmConfig {
   localCliIsolation?: boolean
   /** Codex CLI provider only. Overall subprocess timeout in minutes. */
   codexCliTimeoutMinutes?: number
+  /**
+   * Maximum output tokens for ingest generation. Capped per the model
+   * provider's API limit (many cap at 20480). Default 20480.
+   */
+  ingestMaxTokens?: number
   /** HTTP LLM request backstop. Defaults to 30 minutes for legacy configs. */
   requestTimeoutMinutes?: number
   /** Defaults to true. HTTP providers use a non-streaming wire when false. */
@@ -229,6 +234,15 @@ interface ApiConfig {
 
 export type CloseBehavior = "ask" | "minimize" | "exit"
 
+/** A time-based concurrency slot for ingest scheduling. */
+export interface IngestTimeSlot {
+  id: string
+  label: string
+  startHour: number
+  endHour: number
+  concurrency: number
+}
+
 export type GraphColorMode = "type" | "community"
 
 export interface GraphUiState {
@@ -292,6 +306,8 @@ export interface MineruConfig {
   localServerUrl?: string
   token: string
   modelVersion: MineruModelVersion
+  /** Custom MinerU cloud API endpoint. Defaults to https://mineru.net/api/v4. */
+  apiBase?: string
 }
 
 interface MultimodalConfig {
@@ -330,6 +346,7 @@ export interface ProviderOverride {
   requestTimeoutMinutes?: number
   streamingEnabled?: boolean
   customHeaders?: Record<string, string>
+  ingestMaxTokens?: number
 }
 
 export type ProviderConfigs = Record<string, ProviderOverride>
@@ -417,6 +434,16 @@ interface WikiState {
   searchApiConfig: SearchApiConfig
   embeddingConfig: EmbeddingConfig
   multimodalConfig: MultimodalConfig
+  /** Max concurrent LLM requests during ingest (page writes/merges,
+   *  embedding). Caps the internal pool. Default 5. */
+  ingestConcurrency: number
+  /** Whether to use time-based concurrency schedule instead of flat value. */
+  ingestConcurrencyScheduleEnabled: boolean
+  ingestConcurrencySchedule: IngestTimeSlot[]
+  /** Whether the speculative ingest scan is enabled. When ON, a
+   *  background scan pre-filters already-ingested files from the
+   *  pending backlog when concurrency is saturated. Defaults to OFF. */
+  speculativeScanEnabled: boolean
   outputLanguage: OutputLanguage
   proxyConfig: ProxyConfig
   scheduledImportConfig: ScheduledImportConfig
@@ -448,6 +475,10 @@ interface WikiState {
   setSearchApiConfig: (config: SearchApiConfig) => void
   setEmbeddingConfig: (config: EmbeddingConfig) => void
   setMultimodalConfig: (config: MultimodalConfig) => void
+  setIngestConcurrency: (concurrency: number) => void
+  setIngestConcurrencyScheduleEnabled: (enabled: boolean) => void
+  setIngestConcurrencySchedule: (schedule: IngestTimeSlot[]) => void
+  setSpeculativeScanEnabled: (enabled: boolean) => void
   setOutputLanguage: (lang: OutputLanguage) => void
   setProxyConfig: (config: ProxyConfig) => void
   setScheduledImportConfig: (config: ScheduledImportConfig) => void
@@ -481,6 +512,7 @@ export const useWikiStore = create<WikiState>((set) => ({
     azureApiVersion: "2024-10-21",
     reasoning: { mode: "auto" },
     localCliIsolation: false,
+    ingestMaxTokens: 20480,
   },
   globalLlmConfig: {
     provider: "openai",
@@ -595,6 +627,11 @@ export const useWikiStore = create<WikiState>((set) => ({
     concurrency: 4,
   },
 
+  ingestConcurrency: 5,
+  ingestConcurrencyScheduleEnabled: false,
+  ingestConcurrencySchedule: [],
+  speculativeScanEnabled: false,
+
   outputLanguage: "auto",
 
   proxyConfig: {
@@ -625,6 +662,7 @@ export const useWikiStore = create<WikiState>((set) => ({
     localServerUrl: "",
     token: "",
     modelVersion: "vlm",
+    apiBase: "https://mineru.net/api/v4",
   },
 
   // Default `enabled: true` preserves the pre-toggle behavior: anyone
@@ -657,6 +695,10 @@ export const useWikiStore = create<WikiState>((set) => ({
   setSearchApiConfig: (searchApiConfig) => set({ searchApiConfig }),
   setEmbeddingConfig: (embeddingConfig) => set({ embeddingConfig }),
   setMultimodalConfig: (multimodalConfig) => set({ multimodalConfig }),
+  setIngestConcurrency: (ingestConcurrency) => set({ ingestConcurrency }),
+  setIngestConcurrencyScheduleEnabled: (ingestConcurrencyScheduleEnabled) => set({ ingestConcurrencyScheduleEnabled }),
+  setIngestConcurrencySchedule: (ingestConcurrencySchedule) => set({ ingestConcurrencySchedule }),
+  setSpeculativeScanEnabled: (speculativeScanEnabled) => set({ speculativeScanEnabled }),
   setOutputLanguage: (outputLanguage) => set({ outputLanguage }),
   setProxyConfig: (proxyConfig) => set({ proxyConfig }),
   setScheduledImportConfig: (scheduledImportConfig) => set({ scheduledImportConfig }),

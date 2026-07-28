@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -249,6 +249,16 @@ fn handle_request(
         // retry instantly the way 401 would.
         return err(503, "API server is disabled in Settings → API Server");
     }
+
+    // Window management routes — bypass auth so headless mode can
+    // show/hide the window without configuring a token.
+    if path == format!("{API_PREFIX}/window/show") && method == &Method::Post {
+        return handle_window_show(app);
+    }
+    if path == format!("{API_PREFIX}/window/hide") && method == &Method::Post {
+        return handle_window_hide(app);
+    }
+
     if is_agent_chat_request(&method, &path) && !is_token_authorized(app, query, headers) {
         return err(401, "Unauthorized");
     }
@@ -290,6 +300,13 @@ fn handle_request(
         (&Method::Post, ["projects", project_id, "chat", session_id, "cancel"]) => {
             handle_cancel_chat(app, project_id, session_id)
         }
+        (&Method::Post, ["projects", "activate"]) => {
+            handle_project_activate(app, body)
+        }
+        (&Method::Post, ["projects", project_id, "ingest", "cancel-all"]) => {
+            handle_ingest_cancel_all(app, project_id)
+        }
+        (&Method::Post, ["config", "reload"]) => handle_config_reload(app),
         _ => err(404, "Not found"),
     }
 }
@@ -2092,6 +2109,91 @@ fn handle_rescan(app: &AppHandle, project_id: &str) -> ApiResponse {
         Ok(result) => ok(json!({ "ok": true, "projectId": project.id, "result": result })),
         Err(e) => err(500, e),
     }
+}
+
+fn handle_window_show(app: &AppHandle) -> ApiResponse {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        eprintln!("[API Server] Window shown via POST /api/v1/window/show");
+        ok(json!({ "ok": true, "message": "Window shown" }))
+    } else {
+        err(500, "No main window found")
+    }
+}
+
+fn handle_window_hide(app: &AppHandle) -> ApiResponse {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+        eprintln!("[API Server] Window hidden via POST /api/v1/window/hide");
+        ok(json!({ "ok": true, "message": "Window hidden" }))
+    } else {
+        err(500, "No main window found")
+    }
+}
+
+fn handle_ingest_cancel_all(app: &AppHandle, project_id: &str) -> ApiResponse {
+    let payload = json!({ "projectId": project_id });
+    let _ = app.emit("api://ingest-cancel-all", &payload);
+
+    eprintln!(
+        "[API Server] Ingest cancel-all requested for project: {project_id}"
+    );
+
+    ok(json!({
+        "ok": true,
+        "message": "Ingest cancel-all requested",
+        "projectId": project_id,
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivateProjectRequest {
+    project_id: String,
+}
+
+fn handle_project_activate(app: &AppHandle, body: &str) -> ApiResponse {
+    let req: ActivateProjectRequest = match serde_json::from_str(body) {
+        Ok(req) => req,
+        Err(e) => return err(400, format!("Invalid JSON: {e}")),
+    };
+
+    let project = match resolve_project(app, &req.project_id) {
+        Ok(project) => project,
+        Err(e) => return err(404, e),
+    };
+
+    let payload = json!({
+        "projectId": project.id,
+        "name": project.name,
+        "path": project.path,
+    });
+    let _ = app.emit("api://project-activate", &payload);
+
+    eprintln!(
+        "[API Server] Project activation requested: {} ({})",
+        project.id, project.path
+    );
+
+    ok(json!({
+        "ok": true,
+        "message": "Project activation requested",
+        "project": project,
+    }))
+}
+
+fn handle_config_reload(app: &AppHandle) -> ApiResponse {
+    invalidate_config_cache();
+
+    let _ = app.emit("api://config-reload", ());
+
+    eprintln!("[API Server] Config reload requested — cache invalidated, frontend notified");
+
+    ok(json!({
+        "ok": true,
+        "message": "Config reload triggered — frontend will re-read app-state.json"
+    }))
 }
 
 fn load_source_watch_config(

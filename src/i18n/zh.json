@@ -497,6 +497,7 @@
         "apiMode": "API 模式",
         "endpoint": "Endpoint",
         "contextWindow": "上下文窗口",
+        "ingestMaxOutputTokens": "文档摄入最大输出 Token 数",
         "wireOpenAi": "OpenAI 兼容",
         "wireAnthropic": "Anthropic 兼容",
         "apiKeyPlaceholderCustom": "无 Key 可留空（本地模型）",
@@ -807,7 +808,22 @@
         "aiLanguageHint": "强制 AI 生成内容（chat 回复、wiki 页面、research 结果、lint 报告）使用指定语言。选 \"Auto\" 让 AI 跟随用户输入或源文档的语言。",
         "historyLength": "对话历史长度",
         "historyHint": "每次请求发给 AI 的历史消息条数。多 = 上下文更完整但更费 token。",
-        "historyCurrent": "当前 {{count}} 条消息（约 {{turns}} 轮对话）"
+        "historyCurrent": "当前 {{count}} 条消息（约 {{turns}} 轮对话）",
+        "ingestConcurrency": "文档摄入并发数",
+        "ingestConcurrencyHint": "同时摄入的文件数量。增加可加快批量导入速度。",
+        "ingestConcurrencyScheduleEnabled": "按时间段控制并发数",
+        "scheduleHint": "定义时间段（开始含，结束不含）。支持跨午夜时间段（如 22:00-06:00）。未覆盖的小时使用上面的默认并发数。",
+        "scheduleEmpty": "暂未定义时间段，请在下方添加。",
+        "slotLabel": "标签",
+        "slotLabelPlaceholder": "如：夜间",
+        "slotStart": "开始",
+        "slotEnd": "结束",
+        "slotConcurrency": "并发",
+        "slotRemove": "删除",
+        "slotAdd": "+ 添加时间段",
+        "slotOverlapWarning": "此时间段与另一个时间段重叠。",
+        "speculativeScan": "投机扫描",
+        "speculativeScanHint": "在摄入前预检查文件是否已有缓存结果，跳过未改变的源文件。"
       },
       "interface": {
         "title": "界面",
@@ -872,6 +888,7 @@
         "title": "关于",
         "description": "构建信息和运行时状态。",
         "version": "版本",
+        "buildTime": "构建时间",
         "clipServer": "Clip 服务",
         "apiServer": "API 服务",
         "apiDisabled": "已禁用",
@@ -928,7 +945,9 @@
         "testQuotaNotice": "连接测试会向 MinerU 提交一个小型示例文件，可能消耗少量额度。",
         "testing": "测试中...",
         "testSuccess": "连接成功",
-        "testFailed": "测试失败"
+        "testFailed": "测试失败",
+        "apiBase": "API 基础地址",
+        "apiBaseHint": "仅在使用自定义 MinerU API 端点时修改。"
       }
     }
   },

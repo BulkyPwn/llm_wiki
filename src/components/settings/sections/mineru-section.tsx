@@ -183,6 +183,22 @@ export function MineruSection({ draft, setDraft }: Props) {
                 defaultValue: "PDF parsing supports pipeline and vlm. MinerU-HTML is for HTML files and is not used here.",
               })}
             </p>
+            <div className="space-y-2 pt-2">
+              <Label htmlFor="mineru-api-base">
+                {t("settings.sections.mineru.apiBase", { defaultValue: "API Base URL" })}
+              </Label>
+              <Input
+                id="mineru-api-base"
+                value={draft.mineruApiBase}
+                onChange={(e) => setDraft("mineruApiBase", e.target.value)}
+                placeholder="https://mineru.net/api/v4"
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("settings.sections.mineru.apiBaseHint", {
+                  defaultValue: "Change only if using a custom MinerU API endpoint.",
+                })}
+              </p>
+            </div>
           </div>}
 
           {draft.mineruBackend === "local" && (

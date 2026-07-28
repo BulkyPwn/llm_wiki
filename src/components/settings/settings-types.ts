@@ -1,5 +1,5 @@
 import type { CustomApiMode } from "./llm-presets"
-import type { AzureModelFamily, CloseBehavior, MineruEffort, MineruLocalBackend, MineruModelVersion, MineruParseMethod, ReasoningConfig, SourceWatchConfig } from "@/stores/wiki-store"
+import type { AzureModelFamily, CloseBehavior, MineruEffort, MineruLocalBackend, MineruModelVersion, MineruParseMethod, ReasoningConfig, SourceWatchConfig, IngestTimeSlot } from "@/stores/wiki-store"
 
 /**
  * Shape of the draft state each section reads from and writes into.
@@ -20,6 +20,8 @@ export interface SettingsDraft {
   apiMode: CustomApiMode | undefined
   reasoning: ReasoningConfig | undefined
   localCliIsolation: boolean
+  /** Ingest max output tokens — custom endpoint only. */
+  ingestMaxTokens: number
 
   // Embedding
   embeddingEnabled: boolean
@@ -51,6 +53,12 @@ export interface SettingsDraft {
   multimodalAzureModelFamily: AzureModelFamily
   multimodalApiMode: CustomApiMode | undefined
   multimodalConcurrency: number
+
+  // Ingest
+  ingestConcurrency: number
+  ingestConcurrencyScheduleEnabled: boolean
+  ingestConcurrencySchedule: IngestTimeSlot[]
+  speculativeScanEnabled: boolean
 
   // Output preferences
   outputLanguage: string
@@ -94,6 +102,7 @@ export interface SettingsDraft {
   mineruLocalServerUrl: string
   mineruToken: string
   mineruModelVersion: MineruModelVersion
+  mineruApiBase: string
 
   // Local HTTP API server
   apiEnabled: boolean

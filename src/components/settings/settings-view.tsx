@@ -28,6 +28,7 @@ import { useZoomStore } from "@/stores/zoom-store"
 import { loadSourceWatchConfig, saveLanguage, saveTheme, loadTheme } from "@/lib/project-store"
 import { applyTheme, type AppTheme } from "@/lib/theme"
 import type { SettingsDraft, DraftSetter } from "./settings-types"
+import type { IngestTimeSlot } from "@/stores/wiki-store"
 import { normalizeSourceWatchConfig } from "@/lib/source-watch-config"
 import { LlmProviderSection } from "./sections/llm-provider-section"
 import { EmbeddingSection } from "./sections/embedding-section"
@@ -93,6 +94,10 @@ function initialDraft(
   llm: ReturnType<typeof useWikiStore.getState>["llmConfig"],
   embed: ReturnType<typeof useWikiStore.getState>["embeddingConfig"],
   multimodal: ReturnType<typeof useWikiStore.getState>["multimodalConfig"],
+  ingestConcurrency: number,
+  ingestConcurrencyScheduleEnabled: boolean,
+  ingestConcurrencySchedule: IngestTimeSlot[],
+  speculativeScanEnabled: boolean,
   outputLanguage: ReturnType<typeof useWikiStore.getState>["outputLanguage"],
   proxy: ReturnType<typeof useWikiStore.getState>["proxyConfig"],
   scheduledImport: ReturnType<typeof useWikiStore.getState>["scheduledImportConfig"],
@@ -129,6 +134,7 @@ function initialDraft(
     apiMode: llm.apiMode,
     reasoning: llm.reasoning,
     localCliIsolation: llm.localCliIsolation === true,
+    ingestMaxTokens: llm.ingestMaxTokens ?? 20480,
     embeddingEnabled: embed.enabled,
     embeddingEndpoint: embed.endpoint,
     embeddingApiKey: embed.apiKey,
@@ -150,6 +156,10 @@ function initialDraft(
     multimodalAzureModelFamily: multimodal.azureModelFamily ?? "auto",
     multimodalApiMode: multimodal.apiMode,
     multimodalConcurrency: multimodal.concurrency,
+    ingestConcurrency,
+    ingestConcurrencyScheduleEnabled,
+    ingestConcurrencySchedule,
+    speculativeScanEnabled,
     outputLanguage,
     maxHistoryMessages,
     proxyEnabled: proxy.enabled,
@@ -173,6 +183,7 @@ function initialDraft(
     mineruLocalServerUrl: mineru.localServerUrl || "",
     mineruToken: mineru.token,
     mineruModelVersion: mineru.modelVersion,
+    mineruApiBase: mineru.apiBase ?? "https://mineru.net/api/v4",
     apiEnabled: apiConfig.enabled,
     apiAllowUnauthenticated: apiConfig.allowUnauthenticated,
     apiAllowLanAccess: apiConfig.allowLanAccess,
@@ -209,6 +220,14 @@ export function SettingsView() {
   const setApiConfig = useWikiStore((s) => s.setApiConfig)
   const generalConfig = useWikiStore((s) => s.generalConfig)
   const setGeneralConfig = useWikiStore((s) => s.setGeneralConfig)
+  const ingestConcurrency = useWikiStore((s) => s.ingestConcurrency)
+  const setIngestConcurrency = useWikiStore((s) => s.setIngestConcurrency)
+  const ingestConcurrencyScheduleEnabled = useWikiStore((s) => s.ingestConcurrencyScheduleEnabled)
+  const setIngestConcurrencyScheduleEnabled = useWikiStore((s) => s.setIngestConcurrencyScheduleEnabled)
+  const ingestConcurrencySchedule = useWikiStore((s) => s.ingestConcurrencySchedule)
+  const setIngestConcurrencySchedule = useWikiStore((s) => s.setIngestConcurrencySchedule)
+  const speculativeScanEnabled = useWikiStore((s) => s.speculativeScanEnabled)
+  const setSpeculativeScanEnabled = useWikiStore((s) => s.setSpeculativeScanEnabled)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
   const setMaxHistoryMessages = useChatStore((s) => s.setMaxHistoryMessages)
   // Drives the red dot next to the "About" row in the settings
@@ -230,6 +249,10 @@ export function SettingsView() {
       llmConfig,
       embeddingConfig,
       multimodalConfig,
+      ingestConcurrency,
+      ingestConcurrencyScheduleEnabled,
+      ingestConcurrencySchedule,
+      speculativeScanEnabled,
       outputLanguage,
       proxyConfig,
       scheduledImportConfig,
@@ -287,6 +310,10 @@ export function SettingsView() {
         llmConfig,
         embeddingConfig,
         multimodalConfig,
+        ingestConcurrency,
+        ingestConcurrencyScheduleEnabled,
+        ingestConcurrencySchedule,
+        speculativeScanEnabled,
         outputLanguage,
         proxyConfig,
         scheduledImportConfig,
@@ -312,6 +339,10 @@ export function SettingsView() {
     mineruConfig,
     apiConfig,
     generalConfig,
+    ingestConcurrency,
+    ingestConcurrencyScheduleEnabled,
+    ingestConcurrencySchedule,
+    speculativeScanEnabled,
     maxHistoryMessages,
     project,
   ])
@@ -347,6 +378,8 @@ export function SettingsView() {
       loadApiConfig,
       saveGeneralConfig,
       loadGeneralConfig,
+      saveIngestConcurrency,
+      saveSpeculativeScanEnabled,
       saveZoomLevel,
       loadZoomLevel,
     } = await import("@/lib/project-store")
@@ -422,6 +455,7 @@ export function SettingsView() {
       localServerUrl: draft.mineruLocalServerUrl.trim(),
       token: draft.mineruToken.trim(),
       modelVersion: draft.mineruModelVersion,
+      apiBase: draft.mineruApiBase,
     }
     const newApiConfig = {
       enabled: draft.apiEnabled,
@@ -450,6 +484,10 @@ export function SettingsView() {
     setMineruConfig(newMineruConfig)
     setApiConfig(newApiConfig)
     setGeneralConfig(newGeneralConfig)
+    setIngestConcurrency(draft.ingestConcurrency)
+    setIngestConcurrencyScheduleEnabled(draft.ingestConcurrencyScheduleEnabled)
+    setIngestConcurrencySchedule(draft.ingestConcurrencySchedule)
+    setSpeculativeScanEnabled(draft.speculativeScanEnabled)
 
     try {
       await saveLlmConfig(newLlm)
@@ -506,6 +544,8 @@ export function SettingsView() {
       }
 
       await saveGeneralConfig(newGeneralConfig)
+      await saveIngestConcurrency(draft.ingestConcurrency)
+      await saveSpeculativeScanEnabled(draft.speculativeScanEnabled)
       try {
         if (newGeneralConfig.autostart) {
           await enableAutostart()

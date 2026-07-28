@@ -689,6 +689,22 @@ function PresetRow({
             />
           </div>
 
+          {preset.provider === "custom" && (
+            <div className="space-y-2">
+              <Label>{t("settings.sections.llm.ingestMaxOutputTokens", "Ingest max output tokens")}</Label>
+              <Input
+                type="number"
+                value={String(ov.ingestMaxTokens ?? 20480)}
+                min={1}
+                max={131072}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  if (Number.isFinite(v) && v >= 1) onChange({ ingestMaxTokens: v })
+                }}
+              />
+            </div>
+          )}
+
           <div className="space-y-2 rounded-md border p-3">
             <div className="flex items-start justify-between gap-3">
               <div>

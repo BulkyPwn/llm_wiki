@@ -5,7 +5,7 @@ import { getHttpFetch } from "@/lib/tauri-fetch"
 import { getFileName, normalizePath } from "@/lib/path-utils"
 import type { SavedImage } from "@/lib/extract-source-images"
 
-const API_BASE = "https://mineru.net/api/v4"
+const DEFAULT_API_BASE = "https://mineru.net/api/v4"
 export const DEFAULT_LOCAL_MINERU_ENDPOINT = "http://127.0.0.1:8000"
 const POLL_INTERVAL_MS = 3_000
 const POLL_TIMEOUT_MS = 300_000 // 5 minutes
@@ -22,6 +22,10 @@ const MINERU_IMAGE_EXTS = new Set([
   "tif",
   "tiff",
 ])
+
+function getApiBase(config: MineruConfig): string {
+  return config.apiBase?.trim() || DEFAULT_API_BASE
+}
 
 // ── Types ──
 
@@ -406,11 +410,12 @@ async function submitUrlTask(
   token: string,
   url: string,
   modelVersion: string,
+  apiBase: string,
   signal?: AbortSignal,
 ): Promise<string> {
   const httpFetch = await getHttpFetch()
   throwIfAborted(signal)
-  const res = await httpFetch(`${API_BASE}/extract/task`, {
+  const res = await httpFetch(`${apiBase}/extract/task`, {
     method: "POST",
     headers: await mineruHeaders(token),
     signal,
@@ -427,6 +432,7 @@ async function uploadFileForTask(
   fileName: string,
   fileBase64: string,
   modelVersion: string,
+  apiBase: string,
   signal?: AbortSignal,
 ): Promise<{ batchId: string; uploadUrl: string }> {
   const httpFetch = await getHttpFetch()
@@ -434,7 +440,7 @@ async function uploadFileForTask(
   throwIfAborted(signal)
 
   // Step 1: Get upload URL
-  const res = await httpFetch(`${API_BASE}/file-urls/batch`, {
+  const res = await httpFetch(`${apiBase}/file-urls/batch`, {
     method: "POST",
     headers,
     signal,
@@ -485,14 +491,14 @@ function waitForPollInterval(signal?: AbortSignal): Promise<void> {
   })
 }
 
-async function pollTask(token: string, taskId: string, signal?: AbortSignal): Promise<string> {
+async function pollTask(token: string, taskId: string, apiBase: string, signal?: AbortSignal): Promise<string> {
   const httpFetch = await getHttpFetch()
   const headers = await mineruHeaders(token)
   const start = Date.now()
 
   while (Date.now() - start < POLL_TIMEOUT_MS) {
     throwIfAborted(signal)
-    const res = await httpFetch(`${API_BASE}/extract/task/${taskId}`, {
+    const res = await httpFetch(`${apiBase}/extract/task/${taskId}`, {
       headers,
       signal,
     })
@@ -516,6 +522,7 @@ async function pollTask(token: string, taskId: string, signal?: AbortSignal): Pr
 async function pollBatchTask(
   token: string,
   batchId: string,
+  apiBase: string,
   signal?: AbortSignal,
 ): Promise<string> {
   const httpFetch = await getHttpFetch()
@@ -525,7 +532,7 @@ async function pollBatchTask(
   while (Date.now() - start < POLL_TIMEOUT_MS) {
     throwIfAborted(signal)
     const res = await httpFetch(
-      `${API_BASE}/extract-results/batch/${batchId}`,
+      `${apiBase}/extract-results/batch/${batchId}`,
       { headers, signal },
     )
     if (!res.ok) throw new Error(`MinerU batch poll failed: HTTP ${res.status}`)
@@ -844,13 +851,15 @@ export async function parseWithMineruResult(
     throw new Error("MinerU PDF parsing supports only pipeline or vlm model versions")
   }
 
+  const apiBase = getApiBase(config)
+
   let zipUrl: string
 
   if (sourceUrl) {
     onProgress?.("Submitting URL to MinerU...")
-    const taskId = await submitUrlTask(config.token, sourceUrl, config.modelVersion, signal)
+    const taskId = await submitUrlTask(config.token, sourceUrl, config.modelVersion, apiBase, signal)
     onProgress?.("Waiting for MinerU to finish...")
-    zipUrl = await pollTask(config.token, taskId, signal)
+    zipUrl = await pollTask(config.token, taskId, apiBase, signal)
   } else {
     onProgress?.("Uploading file to MinerU...")
     throwIfAborted(signal)
@@ -869,10 +878,11 @@ export async function parseWithMineruResult(
       fileName,
       base64,
       config.modelVersion,
+      apiBase,
       signal,
     )
     onProgress?.("Waiting for MinerU to finish...")
-    zipUrl = await pollBatchTask(config.token, batchId, signal)
+    zipUrl = await pollBatchTask(config.token, batchId, apiBase, signal)
   }
 
   onProgress?.("Downloading parsed result...")
@@ -890,9 +900,10 @@ export async function parseWithMineruResult(
  */
 export async function testMineruConnection(
   token: string,
-  config?: Pick<MineruConfig, "backend" | "localEndpoint">,
+  config?: Pick<MineruConfig, "backend" | "localEndpoint" | "apiBase">,
 ): Promise<void> {
   const httpFetch = await getHttpFetch()
+  const apiBase = config?.apiBase?.trim() || DEFAULT_API_BASE
 
   if (config?.backend === "local") {
     const res = await httpFetch(`${localMineruApiBase(config.localEndpoint)}/health`)
@@ -907,7 +918,7 @@ export async function testMineruConnection(
     return
   }
 
-  const res = await httpFetch(`${API_BASE}/extract/task`, {
+  const res = await httpFetch(`${apiBase}/extract/task`, {
     method: "POST",
     headers: await mineruHeaders(token),
     body: JSON.stringify({

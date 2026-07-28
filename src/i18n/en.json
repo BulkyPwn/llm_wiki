@@ -497,6 +497,7 @@
         "apiMode": "API Mode",
         "endpoint": "Endpoint",
         "contextWindow": "Context window",
+        "ingestMaxOutputTokens": "Ingest max output tokens",
         "wireOpenAi": "OpenAI-compat",
         "wireAnthropic": "Anthropic-compat",
         "apiKeyPlaceholderCustom": "Leave empty if no key (local models)",
@@ -807,7 +808,22 @@
         "aiLanguageHint": "Force AI-generated content (chat replies, wiki pages, research output, lint reports) to use the selected language. Pick \"Auto\" to let the AI follow the user's input or source document language.",
         "historyLength": "Conversation History Length",
         "historyHint": "Number of prior messages sent to the AI on each request. More = richer context but more tokens.",
-        "historyCurrent": "Currently {{count}} messages (about {{turns}} turns)"
+        "historyCurrent": "Currently {{count}} messages (about {{turns}} turns)",
+        "ingestConcurrency": "Ingest Concurrency",
+        "ingestConcurrencyHint": "Number of files to ingest in parallel. Increase to speed up bulk imports.",
+        "ingestConcurrencyScheduleEnabled": "Time-based Concurrency Schedule",
+        "scheduleHint": "Define time ranges (inclusive start, exclusive end). Cross-midnight ranges (e.g. 22:00-06:00) are supported. Hours not covered by any slot use the default concurrency above.",
+        "scheduleEmpty": "No time slots defined. Add one below.",
+        "slotLabel": "Label",
+        "slotLabelPlaceholder": "e.g. Night",
+        "slotStart": "Start",
+        "slotEnd": "End",
+        "slotConcurrency": "Concur.",
+        "slotRemove": "Remove",
+        "slotAdd": "+ Add time slot",
+        "slotOverlapWarning": "This time slot overlaps with another slot.",
+        "speculativeScan": "Speculative Scan",
+        "speculativeScanHint": "Pre-check pending files against the ingest cache to skip unchanged sources."
       },
       "interface": {
         "title": "Interface",
@@ -872,6 +888,7 @@
         "title": "About",
         "description": "Build info and runtime status.",
         "version": "Version",
+        "buildTime": "Build Time",
         "clipServer": "Clip Server",
         "apiServer": "API Server",
         "apiDisabled": "disabled",
@@ -928,7 +945,9 @@
         "testQuotaNotice": "Connection test submits a small demo file to MinerU and may consume a small amount of quota.",
         "testing": "Testing...",
         "testSuccess": "Connection successful",
-        "testFailed": "Test failed"
+        "testFailed": "Test failed",
+        "apiBase": "API Base URL",
+        "apiBaseHint": "Change only if using a custom MinerU API endpoint."
       }
     }
   },

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { invoke } from "@tauri-apps/api/core"
+import { listen } from "@tauri-apps/api/event"
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart"
 import i18n from "@/i18n"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -9,7 +10,7 @@ import { useLintStore } from "@/stores/lint-store"
 import { useChatStore } from "@/stores/chat-store"
 import { BASE_FONT_SIZE_PX, useZoomStore } from "@/stores/zoom-store"
 import { openProject } from "@/commands/fs"
-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadCustomLlmPresets, loadActivePresetId, loadTaskModelRouting, loadProjectLlmOverride, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadZoomLevel } from "@/lib/project-store"
+import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadCustomLlmPresets, loadActivePresetId, loadTaskModelRouting, loadProjectLlmOverride, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadIngestConcurrency, loadSpeculativeScanEnabled, loadZoomLevel } from "@/lib/project-store"
 import { loadReviewItems, loadLintItems, loadChatHistory, loadChatPreferences } from "@/lib/persist"
 import { setupAutoSave } from "@/lib/auto-save"
 import { startClipWatcher } from "@/lib/clip-watcher"
@@ -20,6 +21,21 @@ import type { WikiProject } from "@/types/wiki"
 
 function applyDocumentZoom(level: number) {
   document.documentElement.style.fontSize = `${BASE_FONT_SIZE_PX * level}px`
+}
+
+function flattenFiles(nodes: Array<{ name: string; path: string; is_dir: boolean; children?: Array<{ name: string; path: string; is_dir: boolean; children?: any[] }> }>): Array<{ name: string; path: string }> {
+  const result: Array<{ name: string; path: string }> = []
+  function walk(items: typeof nodes) {
+    for (const item of items) {
+      if (item.is_dir && item.children) {
+        walk(item.children)
+      } else {
+        result.push({ name: item.name, path: item.path })
+      }
+    }
+  }
+  walk(nodes)
+  return result
 }
 
 function App() {
@@ -131,6 +147,162 @@ function App() {
     // pointer coordinates remain native; fixed-pixel panels keep their caps.
     applyDocumentZoom(zoomLevel)
   }, [zoomLevel])
+
+  // Listen for API-driven project activation (POST /api/v1/projects/activate).
+  useEffect(() => {
+    const unlisten = listen<{ projectId: string; name: string; path: string }>(
+      "api://project-activate",
+      async (event) => {
+        const { path } = event.payload
+        console.log("[API] Project activation event received:", event.payload)
+        try {
+          const proj = await openProject(path)
+          await handleProjectOpened(proj)
+
+          const { listDirectory } = await import("@/commands/fs")
+          const { isIngestableSourcePath, enqueueSourceIngest } = await import("@/lib/source-lifecycle")
+          const { normalizePath } = await import("@/lib/path-utils")
+          const { useWikiStore } = await import("@/stores/wiki-store")
+
+          const pp = normalizePath(proj.path)
+          const sourcesRoot = `${pp}/raw/sources`
+          let tree: Awaited<ReturnType<typeof listDirectory>>
+          try {
+            tree = await listDirectory(sourcesRoot)
+          } catch {
+            console.log("[API] No raw/sources/ directory, skipping ingest scan")
+            return
+          }
+
+          const files = flattenFiles(tree).map((f) => f.path)
+          const ingestable = files
+            .map((fp) => fp.startsWith(pp) ? fp.slice(pp.length + 1) : fp)
+            .filter(isIngestableSourcePath)
+            .map((rel) => `${pp}/${rel}`)
+
+          if (ingestable.length > 0) {
+            console.log(`[API] Enqueuing ${ingestable.length} raw/sources/ files for ingest`)
+            const llmConfig = useWikiStore.getState().llmConfig
+            await enqueueSourceIngest(proj, ingestable, llmConfig)
+          }
+        } catch (err) {
+          console.error("[API] Failed to activate project:", err)
+        }
+      },
+    )
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {})
+    }
+  }, [])
+
+  // Listen for API-driven config reload (POST /api/v1/config/reload).
+  useEffect(() => {
+    const unlisten = listen("api://config-reload", async () => {
+      console.log("[API] Config reload event received")
+      try {
+        const {
+          reloadStore,
+          loadLlmConfig,
+          loadProviderConfigs,
+          loadActivePresetId,
+          loadSearchApiConfig,
+          loadEmbeddingConfig,
+          loadMultimodalConfig,
+          loadProxyConfig,
+          loadApiConfig,
+          loadIngestConcurrency,
+          loadSpeculativeScanEnabled,
+        } = await import("@/lib/project-store")
+
+        await reloadStore()
+
+        const { useWikiStore } = await import("@/stores/wiki-store")
+
+        const savedConfig = await loadLlmConfig()
+        if (savedConfig) {
+          useWikiStore.getState().setLlmConfig(savedConfig)
+        }
+        const savedProviderConfigs = await loadProviderConfigs()
+        if (savedProviderConfigs) {
+          useWikiStore.getState().setProviderConfigs(savedProviderConfigs)
+        }
+        const savedActivePreset = await loadActivePresetId()
+        if (savedActivePreset) {
+          useWikiStore.getState().setActivePresetId(savedActivePreset)
+        }
+        const savedSearchConfig = await loadSearchApiConfig()
+        if (savedSearchConfig) {
+          useWikiStore.getState().setSearchApiConfig(savedSearchConfig)
+        }
+        const savedEmbeddingConfig = await loadEmbeddingConfig()
+        if (savedEmbeddingConfig) {
+          useWikiStore.getState().setEmbeddingConfig(savedEmbeddingConfig)
+        }
+        const savedMultimodalConfig = await loadMultimodalConfig()
+        if (savedMultimodalConfig) {
+          useWikiStore.getState().setMultimodalConfig(savedMultimodalConfig)
+        }
+        const savedProxy = await loadProxyConfig()
+        if (savedProxy) {
+          useWikiStore.getState().setProxyConfig(savedProxy)
+        }
+        const savedApi = await loadApiConfig()
+        if (savedApi) {
+          useWikiStore.getState().setApiConfig({
+            enabled: typeof savedApi.enabled === "boolean" ? savedApi.enabled : true,
+            allowUnauthenticated:
+              typeof savedApi.allowUnauthenticated === "boolean"
+                ? savedApi.allowUnauthenticated
+                : false,
+            allowLanAccess:
+              typeof savedApi.allowLanAccess === "boolean"
+                ? savedApi.allowLanAccess
+                : false,
+            mcpEnabled:
+              typeof savedApi.mcpEnabled === "boolean"
+                ? savedApi.mcpEnabled
+                : false,
+            token: savedApi.token ?? "",
+          })
+        }
+        const savedConcurrency = await loadIngestConcurrency()
+        if (savedConcurrency != null) {
+          useWikiStore.getState().setIngestConcurrency(savedConcurrency)
+        }
+        const savedSpeculativeScan = await loadSpeculativeScanEnabled()
+        if (savedSpeculativeScan != null) {
+          useWikiStore.getState().setSpeculativeScanEnabled(savedSpeculativeScan)
+        }
+        console.log("[API] Config reload complete")
+      } catch (err) {
+        console.error("[API] Config reload failed:", err)
+      }
+    })
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {})
+    }
+  }, [])
+
+  // Listen for API-driven ingest cancel-all.
+  useEffect(() => {
+    const unlisten = listen<{ projectId: string }>(
+      "api://ingest-cancel-all",
+      async (event) => {
+        const { projectId } = event.payload
+        console.log("[API] Ingest cancel-all event received:", event.payload)
+        try {
+          const { cancelAllTasks } = await import("@/lib/ingest-queue")
+          const removed = await cancelAllTasks()
+          console.log(`[API] Cancelled ${removed} ingest task(s) for project ${projectId}`)
+        } catch (err) {
+          console.error("[API] Ingest cancel-all failed:", err)
+        }
+      },
+    )
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {})
+    }
+  }, [])
 
   // Dev-only helper for visually testing the update-banner UX.
   // Open dev tools and run:
@@ -366,6 +538,22 @@ function App() {
         }
         const savedGeneral = await loadGeneralConfig()
         useWikiStore.getState().setGeneralConfig(savedGeneral)
+        try {
+          const savedIngestConcurrency = await loadIngestConcurrency()
+          if (savedIngestConcurrency != null) {
+            useWikiStore.getState().setIngestConcurrency(savedIngestConcurrency)
+          }
+        } catch (err) {
+          console.warn("[startup] failed to load ingest concurrency:", err)
+        }
+        try {
+          const savedSpeculativeScan = await loadSpeculativeScanEnabled()
+          if (savedSpeculativeScan != null) {
+            useWikiStore.getState().setSpeculativeScanEnabled(savedSpeculativeScan)
+          }
+        } catch (err) {
+          console.warn("[startup] failed to load speculative scan setting:", err)
+        }
         try {
           await invoke<string>("set_close_behavior", { value: savedGeneral.closeBehavior })
         } catch (err) {

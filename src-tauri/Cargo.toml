@@ -22,6 +22,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2.5.1"
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["clock"] }
@@ -66,12 +67,16 @@ epub = "2.1.5"
 mobi = "0.8"
 html2text = { version = "0.17.1", default-features = false, features = ["xml"] }
 
+# Pin erased-serde to 0.4.9: v0.4.10 has a build-script panic on Windows
+# (erased-serde is a transitive dep of serde-untagged → typeid)
+erased-serde = "=0.4.9"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 
 [profile.release]
 codegen-units = 1
-lto = true
+lto = "thin"
 opt-level = "s"
 # Unwind (not abort) so third-party parser panics can be caught at the
 # Tauri command boundary via panic_guard and turned into errors. Slightly
